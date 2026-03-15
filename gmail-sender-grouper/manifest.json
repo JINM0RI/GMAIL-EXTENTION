@@ -18,7 +18,9 @@
         "gmailLoader.js",
         "senderExtractor.js",
         "groupEngine.js",
-        "content.js"
+        "content.js",
+        "uiRenderer.js",
+        "floatingButton.js"
       ],
       "css": ["styles.css"],
       "run_at": "document_start"
