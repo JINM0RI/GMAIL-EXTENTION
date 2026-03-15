@@ -13,73 +13,41 @@
   const NAMESPACE = global.SenderGrouper || {};
 
   let gmail = null;
-  let searchQuery = "";
   let renderScheduled = false;
-  let forceRefreshPending = false;
-  let view = {
-    panelRefs: null,
-    ui: null,
-    stats: null,
-  };
 
-  function openEmail(email) {
-    if (!email || !email.row) {
+  function persistGroupedData(result) {
+    if (!chrome || !chrome.storage || !chrome.storage.local) {
       return;
     }
 
-    email.row.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-  }
+    const senders = result.groups.map((group) => ({
+      name: group.senderName,
+      email: group.senderEmail,
+      count: group.emails.length,
+    }));
 
-  function mountPanel() {
-    const panelRefs = NAMESPACE.PanelController.ensureMounted({
-      onSearchInput: (value) => {
-        searchQuery = NAMESPACE.SearchModule.normalize(value);
-        scheduleRender(true);
-      },
-      onToggle: () => {
-        scheduleRender(true);
+    chrome.storage.local.set({
+      senderGrouperData: {
+        totalSenders: result.stats.totalSenders,
+        totalEmails: result.stats.totalEmails,
+        senders,
+        updatedAt: Date.now(),
       },
     });
-
-    if (!panelRefs) {
-      return false;
-    }
-
-    if (!view.ui || !view.stats || view.panelRefs !== panelRefs) {
-      view.panelRefs = panelRefs;
-      view.ui = NAMESPACE.UiRenderer.create(panelRefs.groupsContainer, openEmail);
-      panelRefs.statsContainer.innerHTML = "";
-      view.stats = NAMESPACE.StatsModule.create(panelRefs.statsContainer);
-    }
-
-    return true;
   }
 
-  function render(forceRefresh) {
-    if (!mountPanel()) {
-      return;
-    }
-
+  function collectAndStore() {
     const emails = NAMESPACE.GroupEngine.collectVisibleEmails();
     const result = NAMESPACE.GroupEngine.update(emails);
-    if (!result.changed && !forceRefresh) {
+
+    if (!result.changed) {
       return;
     }
 
-    const filteredGroups = NAMESPACE.SearchModule.filterGroups(result.groups, searchQuery);
-    const visibleKeys = new Set(filteredGroups.map((group) => group.senderKey));
-    const filteredDiff = {
-      changedSenderKeys: result.diff.changedSenderKeys.filter((key) => visibleKeys.has(key)),
-      removedSenderKeys: result.diff.removedSenderKeys,
-    };
-
-    view.ui.render(filteredGroups, filteredDiff, Boolean(forceRefresh || !result.changed));
-    view.stats.render(result.stats);
-    NAMESPACE.PanelController.setEmptyStateVisible(filteredGroups.length === 0);
+    persistGroupedData(result);
   }
 
-  function scheduleRender(forceRefresh) {
-    forceRefreshPending = forceRefreshPending || Boolean(forceRefresh);
+  function scheduleCollection() {
     if (renderScheduled) {
       return;
     }
@@ -87,9 +55,7 @@
     renderScheduled = true;
     global.requestAnimationFrame(() => {
       renderScheduled = false;
-      const doForceRefresh = forceRefreshPending;
-      forceRefreshPending = false;
-      render(doForceRefresh);
+      collectAndStore();
     });
   }
 
@@ -99,7 +65,7 @@
     events.forEach((eventName) => {
       try {
         gmail.observe.on(eventName, () => {
-          scheduleRender(false);
+          scheduleCollection();
         });
       } catch (_error) {
         // Keep compatibility across Gmail.js versions.
@@ -129,7 +95,7 @@
       });
 
       if (hasNewRows) {
-        scheduleRender(false);
+        scheduleCollection();
       }
     });
 
@@ -160,7 +126,7 @@
 
     bindGmailObservers();
     bindMutationFallback();
-    scheduleRender(true);
+    scheduleCollection();
   }
 
   start();

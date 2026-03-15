@@ -13,6 +13,53 @@
     return String(value || "").replace(/\s+/g, " ").trim();
   }
 
+  function parseEmail(value) {
+    const source = normalizeText(value);
+    const match = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.exec(source);
+    return match ? match[0].toLowerCase() : "";
+  }
+
+  function normalizeSenderName(rawValue) {
+    const name = normalizeText(rawValue).replace(/<[^>]*>/g, "").trim();
+    return name || "Unknown Sender";
+  }
+
+  function deriveSenderKey(senderEmail, senderName) {
+    if (senderEmail && senderEmail.includes("@") && senderEmail !== "unknown@unknown") {
+      return senderEmail;
+    }
+
+    const normalizedName = normalizeText(senderName).toLowerCase();
+    return normalizedName ? `name:${normalizedName}` : "unknown@unknown";
+  }
+
+  function fallbackExtractSender(row) {
+    const element = row.querySelector(
+      "span.yP[email], span.yP[title], span.yP[aria-label], span.yP, .yW span[email], .yX.xY .yP, .yW span"
+    );
+
+    if (!element) {
+      return {
+        senderName: "Unknown Sender",
+        senderEmail: "unknown@unknown",
+      };
+    }
+
+    const senderText = normalizeText(element.textContent || element.innerText);
+    const senderEmail =
+      normalizeText(element.getAttribute("email")).toLowerCase() ||
+      parseEmail(element.getAttribute("title")) ||
+      parseEmail(element.getAttribute("aria-label")) ||
+      parseEmail(senderText) ||
+      senderText.toLowerCase() ||
+      "unknown@unknown";
+
+    return {
+      senderName: normalizeSenderName(senderText),
+      senderEmail,
+    };
+  }
+
   function extractSubject(row) {
     const subjectNode = row.querySelector(".bog, .y6 span[id], .xT .y6");
     const subject = normalizeText(subjectNode ? subjectNode.textContent : "");
@@ -30,10 +77,6 @@
   }
 
   function collectVisibleEmails() {
-    if (!NAMESPACE.SenderExtractor || typeof NAMESPACE.SenderExtractor.extractSender !== "function") {
-      throw new Error("SenderExtractor is not initialized");
-    }
-
     const rows = Array.from(document.querySelectorAll("tr.zA"));
     const seen = new Set();
     const emails = [];
@@ -49,14 +92,20 @@
       }
       seen.add(threadId);
 
-      const sender = NAMESPACE.SenderExtractor.extractSender(row);
+      const sender =
+        NAMESPACE.SenderExtractor && typeof NAMESPACE.SenderExtractor.extractSender === "function"
+          ? NAMESPACE.SenderExtractor.extractSender(row)
+          : fallbackExtractSender(row);
       const subject = extractSubject(row);
+      const senderName = normalizeSenderName(sender.senderName || sender.senderEmail);
+      const senderEmail = normalizeText(sender.senderEmail).toLowerCase() || "unknown@unknown";
+      const senderKey = deriveSenderKey(senderEmail, senderName);
 
       emails.push({
         threadId,
-        senderKey: sender.senderEmail,
-        senderName: sender.senderName,
-        senderEmail: sender.senderEmail,
+        senderKey,
+        senderName,
+        senderEmail,
         subject,
         row,
       });

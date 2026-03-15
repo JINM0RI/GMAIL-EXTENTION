@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sender Grouper</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="popup-root">
+      <header class="popup-header">
+        <h1>Sender Grouper</h1>
+      </header>
+
+      <section class="stats-card" aria-live="polite">
+        <div class="stat-row">
+          <span class="label">Total Senders</span>
+          <span id="totalSenders" class="value">--</span>
+        </div>
+        <div class="stat-row">
+          <span class="label">Total Emails</span>
+          <span id="totalEmails" class="value">--</span>
+        </div>
+      </section>
+
+      <section class="senders-card" aria-live="polite">
+        <div class="senders-title">Top Senders</div>
+        <div id="senderList" class="sender-list">
+          <p class="placeholder-text">Open Gmail to load sender data.</p>
+        </div>
+      </section>
+
+      <p id="statusText" class="status-text">Waiting for Gmail data...</p>
+    </main>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

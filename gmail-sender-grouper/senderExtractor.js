@@ -14,6 +14,35 @@
     return match ? match[0].toLowerCase() : "";
   }
 
+  function humanizeDomain(domain) {
+    const raw = normalizeText(domain).toLowerCase();
+    if (!raw) {
+      return "";
+    }
+
+    const parts = raw.split(".").filter(Boolean);
+    if (!parts.length) {
+      return "";
+    }
+
+    const secondLevel = parts.length > 1 ? parts[parts.length - 2] : parts[0];
+    return secondLevel
+      .split(/[._-]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  }
+
+  function senderNameFromEmail(email) {
+    const normalized = normalizeText(email).toLowerCase();
+    if (!normalized || !normalized.includes("@")) {
+      return "";
+    }
+
+    const domain = normalized.split("@")[1] || "";
+    return humanizeDomain(domain);
+  }
+
   function toSenderName(rawName, fallbackEmailOrText) {
     const cleanName = normalizeText(rawName).replace(/<[^>]*>/g, "");
     if (cleanName && cleanName.toLowerCase() !== String(fallbackEmailOrText || "").toLowerCase()) {
@@ -21,6 +50,11 @@
     }
 
     const fallback = normalizeText(fallbackEmailOrText);
+    const fromEmail = senderNameFromEmail(fallback);
+    if (fromEmail) {
+      return fromEmail;
+    }
+
     if (!fallback || !fallback.includes("@")) {
       return fallback || "Unknown Sender";
     }
