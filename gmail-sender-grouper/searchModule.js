@@ -7,26 +7,20 @@
     return String(value || "").trim().toLowerCase();
   }
 
-  function matchesGroup(group, query) {
-    if (!query) {
-      return true;
-    }
-
-    const senderName = normalize(group.senderName);
-    const senderEmail = normalize(group.senderEmail);
-    return senderName.includes(query) || senderEmail.includes(query);
-  }
-
   function filterGroups(groups, rawQuery) {
     const query = normalize(rawQuery);
     if (!query) {
       return groups;
     }
 
-    return groups.filter((group) => matchesGroup(group, query));
+    return groups.filter((group) => {
+      const name = normalize(group.senderName);
+      const email = normalize(group.senderEmail);
+      return name.includes(query) || email.includes(query);
+    });
   }
 
-  NAMESPACE.Search = {
+  NAMESPACE.SearchModule = {
     normalize,
     filterGroups,
   };

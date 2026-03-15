@@ -32,7 +32,7 @@
   async function waitForGmailUi(maxWaitMs) {
     const start = Date.now();
     while (Date.now() - start < maxWaitMs) {
-      if (document.querySelector("div[role='main']")) {
+      if (document.querySelector("div[role='main']") && document.querySelector("div[role='banner']")) {
         return;
       }
       await new Promise((resolve) => setTimeout(resolve, 150));
@@ -44,7 +44,7 @@
     await waitForGmailUi(15000);
 
     if (!global.Gmail) {
-      throw new Error("Gmail.js library is not loaded. Ensure gmail.js is included before gmailLoader.js.");
+      throw new Error("Gmail.js library is not loaded. Ensure libs/gmail.js is included before gmailLoader.js.");
     }
 
     return createGmailInstance();

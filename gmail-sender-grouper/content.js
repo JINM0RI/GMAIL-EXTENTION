@@ -8,86 +8,109 @@
 
   const NAMESPACE = global.SenderGrouper || {};
 
-  let gmailInstance = null;
-  let currentSearchQuery = "";
-  let isRenderScheduled = false;
-  let pendingForceRefresh = false;
-  let renderReason = "initial";
-  let mutationObserver = null;
+  let gmail = null;
+  let searchQuery = "";
+  let renderScheduled = false;
+  let forceRefreshPending = false;
+  let view = {
+    panelRefs: null,
+    ui: null,
+    stats: null,
+  };
 
-  function openEmailFromGroup(email) {
+  function openEmail(email) {
     if (!email || !email.row) {
       return;
     }
 
-    const targetRow = email.row;
-    targetRow.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    targetRow.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    email.row.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   }
 
-  function renderGroupedInbox(forceRefresh) {
-    const visibleEmails = NAMESPACE.GroupingEngine.collectVisibleEmails(gmailInstance);
-    const updateResult = NAMESPACE.GroupingEngine.updateSenderMap(visibleEmails);
-
-    if (!updateResult.changed && !forceRefresh) {
-      return;
-    }
-
-    const filteredGroups = NAMESPACE.Search.filterGroups(updateResult.senderGroups, currentSearchQuery);
-
-    const filteredKeys = new Set(filteredGroups.map((group) => group.senderKey));
-    const diffForFilteredView = {
-      changedSenderKeys: updateResult.diff.changedSenderKeys.filter((senderKey) => filteredKeys.has(senderKey)),
-      removedSenderKeys: updateResult.diff.removedSenderKeys,
-    };
-
-    NAMESPACE.UiRenderer.render({
-      groups: filteredGroups,
-      diff: diffForFilteredView,
-      forceRefresh: Boolean(forceRefresh || !updateResult.changed),
+  function mountPanel() {
+    const panelRefs = NAMESPACE.PanelController.ensureMounted({
+      onSearchInput: (value) => {
+        searchQuery = NAMESPACE.SearchModule.normalize(value);
+        scheduleRender(true);
+      },
+      onToggle: () => {
+        scheduleRender(true);
+      },
     });
 
-    NAMESPACE.StatsPanel.render(updateResult.stats);
+    if (!panelRefs) {
+      return false;
+    }
+
+    if (!view.ui || !view.stats || view.panelRefs !== panelRefs) {
+      view.panelRefs = panelRefs;
+      view.ui = NAMESPACE.UiRenderer.create(panelRefs.groupsContainer, openEmail);
+      panelRefs.statsContainer.innerHTML = "";
+      view.stats = NAMESPACE.StatsModule.create(panelRefs.statsContainer);
+    }
+
+    return true;
   }
 
-  function scheduleRender(reason, forceRefresh) {
-    renderReason = reason || "unknown";
-    pendingForceRefresh = pendingForceRefresh || Boolean(forceRefresh);
-    if (isRenderScheduled) {
+  function render(forceRefresh) {
+    if (!mountPanel()) {
       return;
     }
 
-    isRenderScheduled = true;
+    const emails = NAMESPACE.GroupEngine.collectVisibleEmails();
+    const result = NAMESPACE.GroupEngine.update(emails);
+    if (!result.changed && !forceRefresh) {
+      return;
+    }
+
+    const filteredGroups = NAMESPACE.SearchModule.filterGroups(result.groups, searchQuery);
+    const visibleKeys = new Set(filteredGroups.map((group) => group.senderKey));
+    const filteredDiff = {
+      changedSenderKeys: result.diff.changedSenderKeys.filter((key) => visibleKeys.has(key)),
+      removedSenderKeys: result.diff.removedSenderKeys,
+    };
+
+    view.ui.render(filteredGroups, filteredDiff, Boolean(forceRefresh || !result.changed));
+    view.stats.render(result.stats);
+    NAMESPACE.PanelController.setEmptyStateVisible(filteredGroups.length === 0);
+  }
+
+  function scheduleRender(forceRefresh) {
+    forceRefreshPending = forceRefreshPending || Boolean(forceRefresh);
+    if (renderScheduled) {
+      return;
+    }
+
+    renderScheduled = true;
     global.requestAnimationFrame(() => {
-      isRenderScheduled = false;
-      const shouldForceRefresh = pendingForceRefresh;
-      pendingForceRefresh = false;
-      renderGroupedInbox(shouldForceRefresh);
+      renderScheduled = false;
+      const doForceRefresh = forceRefreshPending;
+      forceRefreshPending = false;
+      render(doForceRefresh);
     });
   }
 
   function bindGmailObservers() {
-    const observerEvents = ["load", "inbox", "emails_loaded", "new_email"];
+    const events = ["load", "inbox", "emails_loaded", "new_email"];
 
-    observerEvents.forEach((eventName) => {
+    events.forEach((eventName) => {
       try {
-        gmailInstance.observe.on(eventName, () => {
-          scheduleRender(`gmail:${eventName}`, false);
+        gmail.observe.on(eventName, () => {
+          scheduleRender(false);
         });
       } catch (_error) {
-        // Keep listener setup resilient even if a specific Gmail.js event is unavailable.
+        // Keep compatibility across Gmail.js versions.
       }
     });
   }
 
-  function bindMutationObserver() {
+  function bindMutationFallback() {
     const mainNode = document.querySelector("div[role='main']");
     if (!mainNode) {
       return;
     }
 
-    mutationObserver = new MutationObserver((mutations) => {
-      const hasRelevantChange = mutations.some((mutation) => {
+    const observer = new MutationObserver((mutations) => {
+      const hasNewRows = mutations.some((mutation) => {
         if (mutation.type !== "childList") {
           return false;
         }
@@ -97,16 +120,16 @@
             return false;
           }
 
-          return node.matches("tr.zA") || node.querySelector("tr.zA");
+          return node.matches("tr.zA") || Boolean(node.querySelector("tr.zA"));
         });
       });
 
-      if (hasRelevantChange) {
-        scheduleRender("mutation", false);
+      if (hasNewRows) {
+        scheduleRender(false);
       }
     });
 
-    mutationObserver.observe(mainNode, {
+    observer.observe(mainNode, {
       childList: true,
       subtree: true,
     });
@@ -118,30 +141,15 @@
     }
 
     try {
-      gmailInstance = await NAMESPACE.GmailLoader.init();
+      gmail = await NAMESPACE.GmailLoader.init();
     } catch (error) {
       console.error("[SenderGrouper] Failed to initialize Gmail.js", error);
       return;
     }
 
-    NAMESPACE.UiRenderer.setCallbacks({
-      onSearchChange: (query) => {
-        currentSearchQuery = NAMESPACE.Search.normalize(query);
-        scheduleRender("search", true);
-      },
-      onEmailOpen: (email) => {
-        openEmailFromGroup(email);
-      },
-    });
-
     bindGmailObservers();
-    bindMutationObserver();
-
-    scheduleRender("startup", true);
-
-    console.info("[SenderGrouper] Initialized and listening for inbox updates.", {
-      reason: renderReason,
-    });
+    bindMutationFallback();
+    scheduleRender(true);
   }
 
   start();
