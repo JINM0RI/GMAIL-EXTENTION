@@ -3,6 +3,26 @@
 
   const NAMESPACE = (global.SenderGrouper = global.SenderGrouper || {});
 
+  function isGmailUiReady() {
+    return Boolean(
+      document.querySelector("div[role='main']") ||
+        document.querySelector("div[gh='tl']") ||
+        document.querySelector("div[role='banner']") ||
+        document.querySelector("div[role='application']")
+    );
+  }
+
+  async function waitForDocumentInteractive(maxWaitMs) {
+    const start = Date.now();
+    while (Date.now() - start < maxWaitMs) {
+      if (document.readyState === "interactive" || document.readyState === "complete") {
+        return true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return false;
+  }
+
   function createGmailInstance() {
     if (global.gmail && global.gmail.observe) {
       return global.gmail;
@@ -32,19 +52,24 @@
   async function waitForGmailUi(maxWaitMs) {
     const start = Date.now();
     while (Date.now() - start < maxWaitMs) {
-      if (document.querySelector("div[role='main']") && document.querySelector("div[role='banner']")) {
-        return;
+      if (isGmailUiReady()) {
+        return true;
       }
       await new Promise((resolve) => setTimeout(resolve, 150));
     }
-    throw new Error("Gmail UI did not become ready in time");
+    return false;
   }
 
   async function init() {
-    await waitForGmailUi(15000);
+    await waitForDocumentInteractive(15000);
+    const uiReady = await waitForGmailUi(35000);
 
     if (!global.Gmail) {
       throw new Error("Gmail.js library is not loaded. Ensure libs/gmail.js is included before gmailLoader.js.");
+    }
+
+    if (!uiReady) {
+      console.warn("[SenderGrouper] Gmail UI readiness check timed out; continuing with deferred observers.");
     }
 
     return createGmailInstance();

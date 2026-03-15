@@ -1,6 +1,10 @@
 (function bootstrapSenderGrouper(global) {
   "use strict";
 
+  if (global !== global.top) {
+    return;
+  }
+
   if (global.__SG_EXTENSION_INITIALIZED__) {
     return;
   }
@@ -143,8 +147,15 @@
     try {
       gmail = await NAMESPACE.GmailLoader.init();
     } catch (error) {
-      console.error("[SenderGrouper] Failed to initialize Gmail.js", error);
-      return;
+      console.warn("[SenderGrouper] Initial Gmail.js boot failed, retrying once...", error);
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+
+      try {
+        gmail = await NAMESPACE.GmailLoader.init();
+      } catch (retryError) {
+        console.error("[SenderGrouper] Failed to initialize Gmail.js", retryError);
+        return;
+      }
     }
 
     bindGmailObservers();
