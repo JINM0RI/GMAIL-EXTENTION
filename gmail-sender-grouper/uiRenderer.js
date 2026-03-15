@@ -3,6 +3,67 @@
 
   const NAMESPACE = (global.SenderGrouper = global.SenderGrouper || {});
 
+  let modalRefs = null;
+
+  function ensureModal() {
+    if (modalRefs) {
+      return modalRefs;
+    }
+
+    const overlay = document.createElement("div");
+    overlay.className = "sg-overlay";
+    overlay.hidden = true;
+
+    overlay.innerHTML = [
+      '<div class="sg-modal" role="dialog" aria-modal="true" aria-label="Sender Emails">',
+      '  <div class="sg-modal-header">',
+      '    <span id="sg-modal-title" class="sg-title">Sender Emails</span>',
+      '    <button id="sg-modal-close" class="sg-close" type="button" aria-label="Close">X</button>',
+      "  </div>",
+      '  <div id="sg-modal-list" class="sg-email-list"></div>',
+      "</div>",
+    ].join("");
+
+    document.body.appendChild(overlay);
+
+    const closeButton = overlay.querySelector("#sg-modal-close");
+    const titleNode = overlay.querySelector("#sg-modal-title");
+    const listNode = overlay.querySelector("#sg-modal-list");
+
+    const close = () => {
+      overlay.hidden = true;
+      document.body.classList.remove("sg-no-scroll");
+      listNode.innerHTML = "";
+    };
+
+    closeButton.addEventListener("click", close);
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) {
+        close();
+      }
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !overlay.hidden) {
+        close();
+      }
+    });
+
+    modalRefs = {
+      overlay,
+      titleNode,
+      listNode,
+      close,
+      open(sender) {
+        titleNode.textContent = `${sender.name} Emails`;
+        overlay.hidden = false;
+        document.body.classList.add("sg-no-scroll");
+      },
+    };
+
+    return modalRefs;
+  }
+
   function create(options) {
     const refs = options || {};
 
@@ -40,7 +101,62 @@
         name,
         email,
         count: Number.isFinite(count) ? count : 0,
+        emails: Array.isArray(sender && sender.emails) ? sender.emails : [],
       };
+    }
+
+    function createModalEmailItem(email) {
+      const row = document.createElement("button");
+      row.className = "sg-email-row";
+      row.type = "button";
+
+      const subject = document.createElement("div");
+      subject.className = "sg-email-subject";
+      subject.textContent = email.subject || "(No subject)";
+
+      const snippet = document.createElement("div");
+      snippet.className = "sg-email-snippet";
+      snippet.textContent = email.snippet || "No preview available";
+
+      const time = document.createElement("div");
+      time.className = "sg-email-time";
+      time.textContent = email.time || "";
+
+      row.appendChild(subject);
+      row.appendChild(snippet);
+      row.appendChild(time);
+
+      row.addEventListener("click", () => {
+        if (!email.threadId) {
+          return;
+        }
+        window.open("https://mail.google.com/mail/u/0/#inbox/" + email.threadId, "_blank");
+      });
+
+      return row;
+    }
+
+    function openSenderModal(sender) {
+      const modal = ensureModal();
+      modal.listNode.innerHTML = "";
+
+      const emails = Array.isArray(sender.emails) ? sender.emails : [];
+      if (!emails.length) {
+        const empty = document.createElement("div");
+        empty.className = "sg-email-empty";
+        empty.textContent = "No emails found for this sender.";
+        modal.listNode.appendChild(empty);
+        modal.open(sender);
+        return;
+      }
+
+      const fragment = document.createDocumentFragment();
+      emails.forEach((email) => {
+        fragment.appendChild(createModalEmailItem(email));
+      });
+
+      modal.listNode.appendChild(fragment);
+      modal.open(sender);
     }
 
     function applyFilter() {
@@ -74,6 +190,7 @@
     function createSenderRow(sender) {
       const row = document.createElement("article");
       row.className = "sg-widget-row";
+      row.tabIndex = 0;
 
       const identity = document.createElement("div");
       identity.className = "sg-widget-identity";
@@ -96,6 +213,14 @@
       identity.appendChild(emailNode);
       row.appendChild(identity);
       row.appendChild(badge);
+
+      row.addEventListener("click", () => openSenderModal(sender));
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openSenderModal(sender);
+        }
+      });
 
       return row;
     }

@@ -15,6 +15,31 @@
   let gmail = null;
   let renderScheduled = false;
 
+  function normalizeText(value) {
+    return String(value || "").replace(/\s+/g, " ").trim();
+  }
+
+  function extractSnippetFromRow(row) {
+    if (!(row instanceof HTMLElement)) {
+      return "";
+    }
+
+    const snippetNode = row.querySelector("span.y2, .y2, .xY.a4W, .bog + span");
+    const rawSnippet = snippetNode ? snippetNode.textContent || snippetNode.innerText : "";
+    return normalizeText(rawSnippet).replace(/^[-\u2013\u2014\s]+/, "");
+  }
+
+  function extractTimeFromRow(row) {
+    if (!(row instanceof HTMLElement)) {
+      return "";
+    }
+
+    const timeNode = row.querySelector("td.xW span[title], td.xW span");
+    const titleText = normalizeText(timeNode ? timeNode.getAttribute("title") : "");
+    const visibleText = normalizeText(timeNode ? timeNode.textContent || timeNode.innerText : "");
+    return titleText || visibleText;
+  }
+
   function persistGroupedData(result) {
     if (!chrome || !chrome.storage || !chrome.storage.local) {
       return;
@@ -24,6 +49,12 @@
       name: group.senderName,
       email: group.senderEmail,
       count: group.emails.length,
+      emails: group.emails.map((email) => ({
+        subject: email.subject || "(No subject)",
+        snippet: extractSnippetFromRow(email.row),
+        time: extractTimeFromRow(email.row),
+        threadId: email.threadId,
+      })),
     }));
 
     chrome.storage.local.set({
