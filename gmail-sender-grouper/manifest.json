@@ -15,6 +15,7 @@
         "libs/jquery.min.js",
         "libs/gmail.js",
         "gmailLoader.js",
+        "senderExtractor.js",
         "groupEngine.js",
         "searchModule.js",
         "statsModule.js",

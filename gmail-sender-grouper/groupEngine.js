@@ -13,56 +13,6 @@
     return String(value || "").replace(/\s+/g, " ").trim();
   }
 
-  function extractEmailFromTitle(titleValue) {
-    const title = normalizeText(titleValue);
-    const match = /<([^>]+@[^>]+)>/.exec(title);
-    return match ? match[1].toLowerCase() : "";
-  }
-
-  function extractEmailFromText(rawText) {
-    const text = normalizeText(rawText).toLowerCase();
-    const match = /([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/.exec(text);
-    return match ? match[1] : "";
-  }
-
-  function humanizeSender(email) {
-    if (!email || !email.includes("@")) {
-      return "Unknown Sender";
-    }
-
-    const localPart = email.split("@")[0].replace(/[._-]+/g, " ");
-    return localPart
-      .split(" ")
-      .filter(Boolean)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" ");
-  }
-
-  function extractSender(row) {
-    const node = row.querySelector("span.yP, .yW span[email], .yX.xY .yP, .yW span");
-    if (!node) {
-      return {
-        senderName: "Unknown Sender",
-        senderEmail: "unknown@unknown",
-      };
-    }
-
-    const senderText = normalizeText(node.textContent);
-    const senderEmail =
-      normalizeText(node.getAttribute("email")).toLowerCase() ||
-      extractEmailFromTitle(node.getAttribute("title")) ||
-      extractEmailFromText(senderText) ||
-      "unknown@unknown";
-
-    const senderNameRaw = senderText.replace(/<[^>]+>/g, "");
-    const senderName = senderNameRaw && senderNameRaw !== senderEmail ? senderNameRaw : humanizeSender(senderEmail);
-
-    return {
-      senderName,
-      senderEmail,
-    };
-  }
-
   function extractSubject(row) {
     const subjectNode = row.querySelector(".bog, .y6 span[id], .xT .y6");
     const subject = normalizeText(subjectNode ? subjectNode.textContent : "");
@@ -80,6 +30,10 @@
   }
 
   function collectVisibleEmails() {
+    if (!NAMESPACE.SenderExtractor || typeof NAMESPACE.SenderExtractor.extractSender !== "function") {
+      throw new Error("SenderExtractor is not initialized");
+    }
+
     const rows = Array.from(document.querySelectorAll("tr.zA"));
     const seen = new Set();
     const emails = [];
@@ -95,7 +49,7 @@
       }
       seen.add(threadId);
 
-      const sender = extractSender(row);
+      const sender = NAMESPACE.SenderExtractor.extractSender(row);
       const subject = extractSubject(row);
 
       emails.push({
