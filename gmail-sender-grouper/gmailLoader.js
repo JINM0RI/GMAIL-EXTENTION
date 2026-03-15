@@ -2,55 +2,6 @@
   "use strict";
 
   const NAMESPACE = (global.SenderGrouper = global.SenderGrouper || {});
-  const GMAIL_JS_CDN = "https://cdn.jsdelivr.net/gh/KartikTalwar/gmail.js/src/gmail.js";
-
-  function loadExternalScript(url, timeoutMs) {
-    return new Promise((resolve, reject) => {
-      const existing = document.querySelector('script[data-sg-gmailjs="true"]');
-      if (existing) {
-        if (global.Gmail) {
-          resolve();
-          return;
-        }
-        existing.addEventListener("load", () => resolve(), { once: true });
-        existing.addEventListener(
-          "error",
-          () => reject(new Error("Failed to load Gmail.js script")),
-          { once: true }
-        );
-        return;
-      }
-
-      const script = document.createElement("script");
-      script.src = url;
-      script.async = true;
-      script.dataset.sgGmailjs = "true";
-
-      const timer = global.setTimeout(() => {
-        script.remove();
-        reject(new Error("Timed out while loading Gmail.js"));
-      }, timeoutMs);
-
-      script.addEventListener(
-        "load",
-        () => {
-          global.clearTimeout(timer);
-          resolve();
-        },
-        { once: true }
-      );
-      script.addEventListener(
-        "error",
-        () => {
-          global.clearTimeout(timer);
-          reject(new Error("Failed to load Gmail.js script"));
-        },
-        { once: true }
-      );
-
-      (document.head || document.documentElement).appendChild(script);
-    });
-  }
 
   function createGmailInstance() {
     if (global.gmail && global.gmail.observe) {
@@ -85,7 +36,7 @@
     await waitForGmailUi(15000);
 
     if (!global.Gmail) {
-      await loadExternalScript(GMAIL_JS_CDN, 12000);
+      throw new Error("Gmail.js library is not loaded. Ensure gmail.js is included before gmailLoader.js.");
     }
 
     return createGmailInstance();
