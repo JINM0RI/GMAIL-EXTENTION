@@ -35,7 +35,8 @@
     function setBodyExpanded(body, expanded) {
       body.dataset.expanded = String(expanded);
       if (expanded) {
-        body.style.maxHeight = `${body.scrollHeight}px`;
+        const desiredHeight = Math.min(body.scrollHeight, 300);
+        body.style.maxHeight = `${desiredHeight}px`;
       } else {
         body.style.maxHeight = "0px";
       }
@@ -96,6 +97,10 @@
       const body = document.createElement("div");
       body.className = "sg-group-body";
 
+      const emailList = document.createElement("div");
+      emailList.className = "sg-email-list";
+      body.appendChild(emailList);
+
       header.addEventListener("click", () => toggleGroup(group.senderKey, card, body, chevron));
 
       card.appendChild(header);
@@ -107,6 +112,7 @@
         senderEmail,
         count,
         body,
+        emailList,
         chevron,
       };
     }
@@ -125,8 +131,8 @@
         fragment.appendChild(createEmailItem(email));
       });
 
-      groupElement.body.innerHTML = "";
-      groupElement.body.appendChild(fragment);
+      groupElement.emailList.innerHTML = "";
+      groupElement.emailList.appendChild(fragment);
 
       const isCollapsed = state.collapsedSenderKeys.has(group.senderKey);
       if (isCollapsed) {

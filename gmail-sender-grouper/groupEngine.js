@@ -5,6 +5,7 @@
 
   const state = {
     senderMap: new Map(),
+    emailByThreadId: new Map(),
     signature: "",
   };
 
@@ -16,6 +17,12 @@
     const title = normalizeText(titleValue);
     const match = /<([^>]+@[^>]+)>/.exec(title);
     return match ? match[1].toLowerCase() : "";
+  }
+
+  function extractEmailFromText(rawText) {
+    const text = normalizeText(rawText).toLowerCase();
+    const match = /([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})/.exec(text);
+    return match ? match[1] : "";
   }
 
   function humanizeSender(email) {
@@ -32,7 +39,7 @@
   }
 
   function extractSender(row) {
-    const node = row.querySelector(".yW span[email], .yX.xY .yP, .yW span");
+    const node = row.querySelector("span.yP, .yW span[email], .yX.xY .yP, .yW span");
     if (!node) {
       return {
         senderName: "Unknown Sender",
@@ -40,12 +47,14 @@
       };
     }
 
+    const senderText = normalizeText(node.textContent);
     const senderEmail =
       normalizeText(node.getAttribute("email")).toLowerCase() ||
       extractEmailFromTitle(node.getAttribute("title")) ||
+      extractEmailFromText(senderText) ||
       "unknown@unknown";
 
-    const senderNameRaw = normalizeText(node.textContent);
+    const senderNameRaw = senderText.replace(/<[^>]+>/g, "");
     const senderName = senderNameRaw && senderNameRaw !== senderEmail ? senderNameRaw : humanizeSender(senderEmail);
 
     return {
@@ -124,23 +133,75 @@
     return false;
   }
 
-  function buildNextMap(emails) {
-    const nextMap = new Map();
+  function ensureGroup(senderKey, senderName, senderEmail) {
+    if (!state.senderMap.has(senderKey)) {
+      state.senderMap.set(senderKey, {
+        senderKey,
+        senderName,
+        senderEmail,
+        emails: [],
+      });
+    }
+
+    return state.senderMap.get(senderKey);
+  }
+
+  function removeEmailFromGroup(emailRecord) {
+    const oldGroup = state.senderMap.get(emailRecord.senderKey);
+    if (!oldGroup) {
+      return;
+    }
+
+    oldGroup.emails = oldGroup.emails.filter((item) => item.threadId !== emailRecord.threadId);
+    if (oldGroup.emails.length === 0) {
+      state.senderMap.delete(emailRecord.senderKey);
+    }
+  }
+
+  function mergeEmails(emails) {
+    const changedSenderKeys = new Set();
 
     emails.forEach((email) => {
-      if (!nextMap.has(email.senderKey)) {
-        nextMap.set(email.senderKey, {
-          senderKey: email.senderKey,
-          senderName: email.senderName,
-          senderEmail: email.senderEmail,
-          emails: [],
-        });
+      const existing = state.emailByThreadId.get(email.threadId);
+
+      if (existing) {
+        const senderChanged = existing.senderKey !== email.senderKey;
+        const subjectChanged = existing.subject !== email.subject;
+        if (!senderChanged && !subjectChanged) {
+          // Keep latest row reference for click navigation.
+          existing.row = email.row;
+          return;
+        }
+
+        removeEmailFromGroup(existing);
+        changedSenderKeys.add(existing.senderKey);
       }
 
-      nextMap.get(email.senderKey).emails.push(email);
+      const group = ensureGroup(email.senderKey, email.senderName, email.senderEmail);
+      const nextEmail = {
+        threadId: email.threadId,
+        senderKey: email.senderKey,
+        senderName: email.senderName,
+        senderEmail: email.senderEmail,
+        subject: email.subject,
+        row: email.row,
+      };
+
+      const existingIndex = group.emails.findIndex((item) => item.threadId === nextEmail.threadId);
+      if (existingIndex >= 0) {
+        group.emails[existingIndex] = nextEmail;
+      } else {
+        group.emails.push(nextEmail);
+      }
+
+      state.emailByThreadId.set(nextEmail.threadId, nextEmail);
+      changedSenderKeys.add(email.senderKey);
     });
 
-    return nextMap;
+    return {
+      changedSenderKeys: Array.from(changedSenderKeys),
+      removedSenderKeys: [],
+    };
   }
 
   function sortGroups(groups) {
@@ -180,36 +241,32 @@
       };
     }
 
-    const previousMap = state.senderMap;
-    const nextMap = buildNextMap(emailList);
-
-    const changedSenderKeys = [];
-    nextMap.forEach((nextGroup, senderKey) => {
-      if (hasGroupChanged(previousMap.get(senderKey), nextGroup)) {
-        changedSenderKeys.push(senderKey);
-      }
-    });
-
-    const removedSenderKeys = [];
-    previousMap.forEach((_group, senderKey) => {
-      if (!nextMap.has(senderKey)) {
-        removedSenderKeys.push(senderKey);
-      }
-    });
-
-    state.senderMap = nextMap;
+    const diff = mergeEmails(emailList);
     state.signature = signature;
 
-    const groups = sortGroups(Array.from(nextMap.values()));
+    // Keep email ordering stable and newest-first based on current DOM order when rows are available.
+    state.senderMap.forEach((group) => {
+      group.emails.sort((a, b) => {
+        if (a.row && b.row && a.row.compareDocumentPosition) {
+          const position = a.row.compareDocumentPosition(b.row);
+          if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
+            return -1;
+          }
+          if (position & Node.DOCUMENT_POSITION_PRECEDING) {
+            return 1;
+          }
+        }
+        return a.subject.localeCompare(b.subject);
+      });
+    });
+
+    const groups = sortGroups(Array.from(state.senderMap.values()));
 
     return {
       changed: true,
       groups,
       stats: buildStats(groups),
-      diff: {
-        changedSenderKeys,
-        removedSenderKeys,
-      },
+      diff,
     };
   }
 

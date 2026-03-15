@@ -26,6 +26,7 @@
   min-width: var(--sg-panel-width);
   max-width: var(--sg-panel-width);
   flex: 0 0 var(--sg-panel-width);
+  height: calc(100vh - 12px);
   transition: width 0.24s ease, min-width 0.24s ease, max-width 0.24s ease, opacity 0.18s ease;
   opacity: 1;
 }
@@ -43,7 +44,7 @@
 .sg-panel-shell {
   position: sticky;
   top: 76px;
-  max-height: calc(100vh - 88px);
+  height: calc(100vh - 88px);
   border: 1px solid var(--sg-line);
   border-radius: 16px;
   background: linear-gradient(180deg, #ffffff 0%, var(--sg-bg) 100%);
@@ -145,6 +146,7 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 10px;
   display: flex;
   flex-direction: column;
@@ -225,6 +227,12 @@
   overflow: hidden;
   transition: max-height 0.24s ease;
   border-top: 1px solid #edf2fb;
+}
+
+.sg-email-list {
+  max-height: 250px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .sg-email-row {
