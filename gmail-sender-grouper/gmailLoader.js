@@ -12,10 +12,18 @@
       throw new Error("Gmail.js constructor not found on window");
     }
 
-    const gmail = new global.Gmail();
+    const jq = global.jQuery || global.$;
+    if (!jq) {
+      throw new Error("jQuery is not available for Gmail.js initialization");
+    }
+
+    const gmail = new global.Gmail(jq);
     if (!gmail || !gmail.observe) {
       throw new Error("Gmail.js initialized but observer API is unavailable");
     }
+
+    // Silence noisy legacy warnings from Gmail.js internals while keeping functionality.
+    gmail.DISABLE_OLD_GMAIL_API_DEPRECATION_WARNINGS = true;
 
     global.gmail = gmail;
     return gmail;
