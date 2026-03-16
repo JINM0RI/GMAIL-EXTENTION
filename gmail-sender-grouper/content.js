@@ -14,6 +14,8 @@
 
   let gmail = null;
   let renderScheduled = false;
+  let fullScanCompleted = false;
+  let scanInProgress = false;
 
   function normalizeText(value) {
     return String(value || "").replace(/\s+/g, " ").trim();
@@ -67,15 +69,136 @@
     });
   }
 
-  function collectAndStore() {
-    const emails = NAMESPACE.GroupEngine.collectVisibleEmails();
-    const result = NAMESPACE.GroupEngine.update(emails);
+  function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
 
-    if (!result.changed) {
+  function getInboxScrollContainer() {
+    const mainNode = document.querySelector("div[role='main']");
+    const candidates = [
+      mainNode,
+      mainNode ? mainNode.parentElement : null,
+      mainNode ? mainNode.closest(".nH") : null,
+      document.scrollingElement,
+    ].filter(Boolean);
+
+    let best = document.scrollingElement || document.documentElement;
+    let bestScrollable = -1;
+
+    candidates.forEach((node) => {
+      if (!(node instanceof HTMLElement) && node !== document.scrollingElement) {
+        return;
+      }
+
+      const element = node === document.scrollingElement ? document.documentElement : node;
+      const scrollable = Math.max(0, element.scrollHeight - element.clientHeight);
+      if (scrollable > bestScrollable) {
+        bestScrollable = scrollable;
+        best = node;
+      }
+    });
+
+    return best;
+  }
+
+  function getScrollTop(container) {
+    if (container === document.scrollingElement || container === document.documentElement) {
+      return global.scrollY || document.documentElement.scrollTop || 0;
+    }
+    return container.scrollTop || 0;
+  }
+
+  function setScrollTop(container, value) {
+    if (container === document.scrollingElement || container === document.documentElement) {
+      global.scrollTo(0, Math.max(0, value));
+      return;
+    }
+    container.scrollTop = Math.max(0, value);
+  }
+
+  function getScrollHeight(container) {
+    if (container === document.scrollingElement || container === document.documentElement) {
+      return Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
+    }
+    return container.scrollHeight || 0;
+  }
+
+  function getClientHeight(container) {
+    if (container === document.scrollingElement || container === document.documentElement) {
+      return global.innerHeight || document.documentElement.clientHeight || 0;
+    }
+    return container.clientHeight || 0;
+  }
+
+  function scrollDown(container, delta) {
+    const nextTop = getScrollTop(container) + delta;
+    setScrollTop(container, nextTop);
+  }
+
+  async function scanAllEmails() {
+    const collectedByThread = new Map();
+    const container = getInboxScrollContainer();
+    const originalTop = getScrollTop(container);
+    const stepSize = Math.max(520, Math.floor(getClientHeight(container) * 0.9));
+
+    let lastHeight = -1;
+    let stableRounds = 0;
+
+    for (let step = 0; step < 80; step += 1) {
+      const visible = NAMESPACE.GroupEngine.collectVisibleEmails();
+      visible.forEach((email) => {
+        if (!email || !email.threadId) {
+          return;
+        }
+        collectedByThread.set(email.threadId, email);
+      });
+
+      const currentHeight = getScrollHeight(container);
+      const currentTop = getScrollTop(container);
+      const maxTop = Math.max(0, currentHeight - getClientHeight(container));
+      const reachedBottom = currentTop >= maxTop - 4;
+
+      if (currentHeight <= lastHeight && reachedBottom) {
+        stableRounds += 1;
+      } else {
+        stableRounds = 0;
+      }
+
+      if (stableRounds >= 2) {
+        break;
+      }
+
+      lastHeight = currentHeight;
+      scrollDown(container, stepSize);
+      await delay(900);
+    }
+
+    setScrollTop(container, originalTop);
+
+    return Array.from(collectedByThread.values());
+  }
+
+  async function collectAndStore() {
+    if (scanInProgress) {
       return;
     }
 
-    persistGroupedData(result);
+    scanInProgress = true;
+
+    try {
+      const emails = fullScanCompleted ? NAMESPACE.GroupEngine.collectVisibleEmails() : await scanAllEmails();
+      const result = NAMESPACE.GroupEngine.update(emails);
+
+      fullScanCompleted = true;
+
+      if (!result.changed) {
+        return;
+      }
+
+      persistGroupedData(result);
+    } finally {
+      scanInProgress = false;
+    }
   }
 
   function scheduleCollection() {
@@ -84,9 +207,9 @@
     }
 
     renderScheduled = true;
-    global.requestAnimationFrame(() => {
+    global.requestAnimationFrame(async () => {
       renderScheduled = false;
-      collectAndStore();
+      await collectAndStore();
     });
   }
 

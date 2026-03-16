@@ -116,6 +116,11 @@
         return;
       }
 
+      // Modal overlay interactions should only affect the modal, not the sender panel.
+      if (target.closest(".sg-overlay") || target.closest(".sg-modal")) {
+        return;
+      }
+
       if (dom.panel.contains(target) || dom.button.contains(target)) {
         return;
       }
