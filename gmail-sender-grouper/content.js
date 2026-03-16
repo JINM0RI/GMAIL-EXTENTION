@@ -73,78 +73,60 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  function getInboxScrollContainer() {
-    const mainNode = document.querySelector("div[role='main']");
-    const candidates = [
-      mainNode,
-      mainNode ? mainNode.parentElement : null,
-      mainNode ? mainNode.closest(".nH") : null,
-      document.scrollingElement,
-    ].filter(Boolean);
+  function getGmailInboxScrollContainer(mainNode) {
+    if (!mainNode) {
+      return null;
+    }
 
-    let best = document.scrollingElement || document.documentElement;
-    let bestScrollable = -1;
+    const candidates = [mainNode, ...Array.from(mainNode.querySelectorAll("div"))];
+    let best = mainNode;
+    let bestScrollable = 0;
 
     candidates.forEach((node) => {
-      if (!(node instanceof HTMLElement) && node !== document.scrollingElement) {
+      if (!(node instanceof HTMLElement)) {
         return;
       }
 
-      const element = node === document.scrollingElement ? document.documentElement : node;
-      const scrollable = Math.max(0, element.scrollHeight - element.clientHeight);
-      if (scrollable > bestScrollable) {
-        bestScrollable = scrollable;
+      const style = global.getComputedStyle(node);
+      const overflowY = style ? style.overflowY : "";
+      const canScrollY = overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay";
+      const scrollable = node.scrollHeight - node.clientHeight;
+      if (canScrollY && scrollable > bestScrollable) {
         best = node;
+        bestScrollable = scrollable;
       }
     });
 
     return best;
   }
 
-  function getScrollTop(container) {
-    if (container === document.scrollingElement || container === document.documentElement) {
-      return global.scrollY || document.documentElement.scrollTop || 0;
+  function isInboxViewActive() {
+    const hash = String(global.location.hash || "").toLowerCase();
+    return !hash || hash.includes("#inbox") || hash.includes("/inbox");
+  }
+
+  async function scanEntireInbox() {
+    const mainNode = document.querySelector("div[role='main']");
+    if (!(mainNode instanceof HTMLElement)) {
+      return NAMESPACE.GroupEngine.collectVisibleEmails();
     }
-    return container.scrollTop || 0;
-  }
 
-  function setScrollTop(container, value) {
-    if (container === document.scrollingElement || container === document.documentElement) {
-      global.scrollTo(0, Math.max(0, value));
-      return;
+    const scrollContainer = getGmailInboxScrollContainer(mainNode);
+    if (!(scrollContainer instanceof HTMLElement)) {
+      return NAMESPACE.GroupEngine.collectVisibleEmails();
     }
-    container.scrollTop = Math.max(0, value);
-  }
 
-  function getScrollHeight(container) {
-    if (container === document.scrollingElement || container === document.documentElement) {
-      return Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
-    }
-    return container.scrollHeight || 0;
-  }
-
-  function getClientHeight(container) {
-    if (container === document.scrollingElement || container === document.documentElement) {
-      return global.innerHeight || document.documentElement.clientHeight || 0;
-    }
-    return container.clientHeight || 0;
-  }
-
-  function scrollDown(container, delta) {
-    const nextTop = getScrollTop(container) + delta;
-    setScrollTop(container, nextTop);
-  }
-
-  async function scanAllEmails() {
     const collectedByThread = new Map();
-    const container = getInboxScrollContainer();
-    const originalTop = getScrollTop(container);
-    const stepSize = Math.max(520, Math.floor(getClientHeight(container) * 0.9));
+    const originalTop = scrollContainer.scrollTop;
+    const stepSize = Math.max(600, Math.floor(scrollContainer.clientHeight * 0.9));
+    let previousCount = 0;
+    let stagnantRounds = 0;
 
-    let lastHeight = -1;
-    let stableRounds = 0;
+    for (let step = 0; step < 120; step += 1) {
+      if (!isInboxViewActive()) {
+        break;
+      }
 
-    for (let step = 0; step < 80; step += 1) {
       const visible = NAMESPACE.GroupEngine.collectVisibleEmails();
       visible.forEach((email) => {
         if (!email || !email.threadId) {
@@ -153,27 +135,24 @@
         collectedByThread.set(email.threadId, email);
       });
 
-      const currentHeight = getScrollHeight(container);
-      const currentTop = getScrollTop(container);
-      const maxTop = Math.max(0, currentHeight - getClientHeight(container));
-      const reachedBottom = currentTop >= maxTop - 4;
+      const reachedBottom = scrollContainer.scrollTop + scrollContainer.clientHeight >= scrollContainer.scrollHeight - 8;
 
-      if (currentHeight <= lastHeight && reachedBottom) {
-        stableRounds += 1;
+      if (collectedByThread.size === previousCount) {
+        stagnantRounds += 1;
       } else {
-        stableRounds = 0;
+        stagnantRounds = 0;
+        previousCount = collectedByThread.size;
       }
 
-      if (stableRounds >= 2) {
+      if (stagnantRounds >= 3 && reachedBottom) {
         break;
       }
 
-      lastHeight = currentHeight;
-      scrollDown(container, stepSize);
-      await delay(900);
+      scrollContainer.scrollBy(0, stepSize);
+      await delay(1100);
     }
 
-    setScrollTop(container, originalTop);
+    scrollContainer.scrollTop = originalTop;
 
     return Array.from(collectedByThread.values());
   }
@@ -186,7 +165,7 @@
     scanInProgress = true;
 
     try {
-      const emails = fullScanCompleted ? NAMESPACE.GroupEngine.collectVisibleEmails() : await scanAllEmails();
+      const emails = fullScanCompleted ? NAMESPACE.GroupEngine.collectVisibleEmails() : await scanEntireInbox();
       const result = NAMESPACE.GroupEngine.update(emails);
 
       fullScanCompleted = true;
