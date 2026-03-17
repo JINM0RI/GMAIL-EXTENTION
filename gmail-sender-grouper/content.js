@@ -10,271 +10,57 @@
   }
   global.__SG_EXTENSION_INITIALIZED__ = true;
 
-  const NAMESPACE = global.SenderGrouper || {};
+  const NAMESPACE = (global.SenderGrouper = global.SenderGrouper || {});
 
-  let gmail = null;
-  let renderScheduled = false;
-  let fullScanCompleted = false;
-  let scanInProgress = false;
-  let buttonVisible = false;
-
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (!msg || msg.type !== "TOGGLE_FLOATING_BUTTON") {
-      return;
-    }
-
-    if (!NAMESPACE.FloatingWidget || typeof NAMESPACE.FloatingWidget.toggleFloatingButton !== "function") {
-      return;
-    }
-
-    buttonVisible = NAMESPACE.FloatingWidget.toggleFloatingButton();
-    return true;
-  });
-
-  function normalizeText(value) {
-    return String(value || "").replace(/\s+/g, " ").trim();
-  }
-
-  function extractSnippetFromRow(row) {
-    if (!(row instanceof HTMLElement)) {
-      return "";
-    }
-
-    const snippetNode = row.querySelector("span.y2, .y2, .xY.a4W, .bog + span");
-    const rawSnippet = snippetNode ? snippetNode.textContent || snippetNode.innerText : "";
-    return normalizeText(rawSnippet).replace(/^[-\u2013\u2014\s]+/, "");
-  }
-
-  function extractTimeFromRow(row) {
-    if (!(row instanceof HTMLElement)) {
-      return "";
-    }
-
-    const timeNode = row.querySelector("td.xW span[title], td.xW span");
-    const titleText = normalizeText(timeNode ? timeNode.getAttribute("title") : "");
-    const visibleText = normalizeText(timeNode ? timeNode.textContent || timeNode.innerText : "");
-    return titleText || visibleText;
-  }
-
-  function persistGroupedData(result) {
-    if (!chrome || !chrome.storage || !chrome.storage.local) {
-      return;
-    }
-
-    const senders = result.groups.map((group) => ({
-      name: group.senderName,
-      email: group.senderEmail,
-      count: group.emails.length,
-      emails: group.emails.map((email) => ({
-        subject: email.subject || "(No subject)",
-        snippet: extractSnippetFromRow(email.row),
-        time: extractTimeFromRow(email.row),
-        threadId: email.threadId,
-      })),
-    }));
-
-    chrome.storage.local.set({
-      senderGrouperData: {
-        totalSenders: result.stats.totalSenders,
-        totalEmails: result.stats.totalEmails,
-        senders,
-        updatedAt: Date.now(),
-      },
-    });
-  }
-
-  function delay(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  function getGmailInboxScrollContainer(mainNode) {
-    if (!mainNode) {
-      return null;
-    }
-
-    const candidates = [mainNode, ...Array.from(mainNode.querySelectorAll("div"))];
-    let best = mainNode;
-    let bestScrollable = 0;
-
-    candidates.forEach((node) => {
-      if (!(node instanceof HTMLElement)) {
-        return;
-      }
-
-      const style = global.getComputedStyle(node);
-      const overflowY = style ? style.overflowY : "";
-      const canScrollY = overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay";
-      const scrollable = node.scrollHeight - node.clientHeight;
-      if (canScrollY && scrollable > bestScrollable) {
-        best = node;
-        bestScrollable = scrollable;
-      }
-    });
-
-    return best;
-  }
-
-  function isInboxViewActive() {
-    const hash = String(global.location.hash || "").toLowerCase();
-    return !hash || hash.includes("#inbox") || hash.includes("/inbox");
-  }
-
-  async function scanEntireInbox() {
-    const mainNode = document.querySelector("div[role='main']");
-    if (!(mainNode instanceof HTMLElement)) {
-      return NAMESPACE.GroupEngine.collectVisibleEmails();
-    }
-
-    const scrollContainer = getGmailInboxScrollContainer(mainNode);
-    if (!(scrollContainer instanceof HTMLElement)) {
-      return NAMESPACE.GroupEngine.collectVisibleEmails();
-    }
-
-    const collectedByThread = new Map();
-    const originalTop = scrollContainer.scrollTop;
-    const stepSize = Math.max(600, Math.floor(scrollContainer.clientHeight * 0.9));
-    let previousCount = 0;
-    let stagnantRounds = 0;
-
-    for (let step = 0; step < 120; step += 1) {
-      if (!isInboxViewActive()) {
-        break;
-      }
-
-      const visible = NAMESPACE.GroupEngine.collectVisibleEmails();
-      visible.forEach((email) => {
-        if (!email || !email.threadId) {
+  function sendRuntimeMessage(message) {
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message || "Runtime messaging failed"));
           return;
         }
-        collectedByThread.set(email.threadId, email);
+        resolve(response || null);
       });
-
-      const reachedBottom = scrollContainer.scrollTop + scrollContainer.clientHeight >= scrollContainer.scrollHeight - 8;
-
-      if (collectedByThread.size === previousCount) {
-        stagnantRounds += 1;
-      } else {
-        stagnantRounds = 0;
-        previousCount = collectedByThread.size;
-      }
-
-      if (stagnantRounds >= 3 && reachedBottom) {
-        break;
-      }
-
-      scrollContainer.scrollBy(0, stepSize);
-      await delay(1100);
-    }
-
-    scrollContainer.scrollTop = originalTop;
-
-    return Array.from(collectedByThread.values());
+    });
   }
 
-  async function collectAndStore() {
-    if (scanInProgress) {
+  async function requestTokenAndEmails() {
+    const tokenResult = await sendRuntimeMessage({ type: "GET_TOKEN" });
+    if (!tokenResult || !tokenResult.ok) {
+      throw new Error((tokenResult && tokenResult.error) || "Failed to get auth token");
+    }
+
+    const fetchResult = await sendRuntimeMessage({ type: "FETCH_EMAILS" });
+    if (!fetchResult || !fetchResult.ok) {
+      throw new Error((fetchResult && fetchResult.error) || "Failed to fetch emails");
+    }
+
+    return fetchResult.groupedData;
+  }
+
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (!msg || !msg.type) {
       return;
     }
 
-    scanInProgress = true;
-
-    try {
-      const emails = fullScanCompleted ? NAMESPACE.GroupEngine.collectVisibleEmails() : await scanEntireInbox();
-      const result = NAMESPACE.GroupEngine.update(emails);
-
-      fullScanCompleted = true;
-
-      if (!result.changed) {
+    if (msg.type === "TOGGLE_FLOATING_BUTTON") {
+      if (!NAMESPACE.FloatingWidget || typeof NAMESPACE.FloatingWidget.toggleFloatingButton !== "function") {
         return;
       }
-
-      persistGroupedData(result);
-    } finally {
-      scanInProgress = false;
-    }
-  }
-
-  function scheduleCollection() {
-    if (renderScheduled) {
-      return;
-    }
-
-    renderScheduled = true;
-    global.requestAnimationFrame(async () => {
-      renderScheduled = false;
-      await collectAndStore();
-    });
-  }
-
-  function bindGmailObservers() {
-    const events = ["load", "inbox", "emails_loaded", "new_email"];
-
-    events.forEach((eventName) => {
-      try {
-        gmail.observe.on(eventName, () => {
-          scheduleCollection();
+      const visible = NAMESPACE.FloatingWidget.toggleFloatingButton();
+      if (visible) {
+        requestTokenAndEmails().catch((error) => {
+          console.error("[SenderGrouper] Failed to sync Gmail data", error && error.message ? error.message : error);
         });
-      } catch (_error) {
-        // Keep compatibility across Gmail.js versions.
       }
-    });
-  }
-
-  function bindMutationFallback() {
-    const mainNode = document.querySelector("div[role='main']");
-    if (!mainNode) {
-      return;
+      return true;
     }
 
-    const observer = new MutationObserver((mutations) => {
-      const hasNewRows = mutations.some((mutation) => {
-        if (mutation.type !== "childList") {
-          return false;
-        }
-
-        return Array.from(mutation.addedNodes).some((node) => {
-          if (!(node instanceof HTMLElement)) {
-            return false;
-          }
-
-          return node.matches("tr.zA") || Boolean(node.querySelector("tr.zA"));
-        });
-      });
-
-      if (hasNewRows) {
-        scheduleCollection();
-      }
-    });
-
-    observer.observe(mainNode, {
-      childList: true,
-      subtree: true,
-    });
-  }
-
-  async function start() {
-    if (!/mail\.google\.com$/i.test(global.location.hostname)) {
-      return;
+    if (msg.type === "SG_DATA_UPDATED") {
+      // UI listens to chrome.storage.onChanged; this is an optional sync hint.
+      return true;
     }
 
-    try {
-      gmail = await NAMESPACE.GmailLoader.init();
-    } catch (error) {
-      console.warn("[SenderGrouper] Initial Gmail.js boot failed, retrying once...", error);
-      await new Promise((resolve) => setTimeout(resolve, 2500));
-
-      try {
-        gmail = await NAMESPACE.GmailLoader.init();
-      } catch (retryError) {
-        console.error("[SenderGrouper] Failed to initialize Gmail.js", retryError);
-        return;
-      }
-    }
-
-    bindGmailObservers();
-    bindMutationFallback();
-    scheduleCollection();
-  }
-
-  start();
+    return undefined;
+  });
 })(window);
