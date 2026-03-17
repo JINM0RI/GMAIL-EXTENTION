@@ -4,7 +4,7 @@
   const API_BASE = "https://www.googleapis.com/gmail/v1/users/me";
   const PAGE_SIZE = 100;
   const DETAIL_BATCH_SIZE = 20;
-  const MAX_MESSAGE_SCAN = 500;
+  const MAX_MESSAGE_SCAN = 600;
 
   function normalizeText(value) {
     return String(value || "").replace(/\s+/g, " ").trim();
@@ -89,7 +89,7 @@
       pageToken = data.nextPageToken || null;
       pages += 1;
 
-      if (pages > 500) {
+      if (pages > 600) {
         break;
       }
     } while (pageToken);
