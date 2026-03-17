@@ -12,6 +12,11 @@
 
   const STORAGE_KEY = "senderGrouperData";
   const NAMESPACE = (global.SenderGrouper = global.SenderGrouper || {});
+  const state = {
+    dom: null,
+    controller: null,
+    mounted: false,
+  };
 
   function buildWidgetDom() {
     const button = document.createElement("button");
@@ -24,7 +29,7 @@
       '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 4h20v16H2V4zm2 2v.51L12 13l8-6.49V6H4zm16 12V9.04l-7.39 5.99a1 1 0 0 1-1.22 0L4 9.04V18h16z"></path></svg>';
 
     const panel = document.createElement("section");
-    panel.id = "sg-floating-panel";
+    panel.id = "sg-main-ui";
     panel.className = "sg-floating-panel";
     panel.setAttribute("aria-hidden", "true");
 
@@ -95,7 +100,7 @@
       dom.button.setAttribute("aria-expanded", "false");
     }
 
-    function togglePanel() {
+    function toggleMainUI() {
       if (isOpen) {
         closePanel();
         return;
@@ -103,7 +108,7 @@
       openPanel();
     }
 
-    dom.button.addEventListener("click", togglePanel);
+    dom.button.addEventListener("click", toggleMainUI);
     dom.closeButton.addEventListener("click", closePanel);
 
     global.document.addEventListener("click", (event) => {
@@ -158,17 +163,21 @@
     return {
       openPanel,
       closePanel,
-      togglePanel,
+      toggleMainUI,
+      isOpen() {
+        return isOpen;
+      },
     };
   }
 
-  function mountWhenReady() {
+  function createMainUI() {
     if (!global.document.body) {
-      global.setTimeout(mountWhenReady, 120);
+      global.setTimeout(createMainUI, 120);
       return;
     }
 
-    if (global.document.getElementById("sg-floating-button")) {
+    if (state.mounted || global.document.getElementById("sg-floating-button")) {
+      state.mounted = true;
       return;
     }
 
@@ -186,8 +195,54 @@
       updatedAtNode: dom.updatedAtNode,
     });
 
-    createController(dom, renderer);
+    const controller = createController(dom, renderer);
+    state.dom = dom;
+    state.controller = controller;
+    state.mounted = true;
   }
 
-  mountWhenReady();
+  function removeMainUI() {
+    const button = state.dom && state.dom.button ? state.dom.button : global.document.getElementById("sg-floating-button");
+    const panel = state.dom && state.dom.panel ? state.dom.panel : global.document.getElementById("sg-main-ui");
+
+    if (button && button.parentNode) {
+      button.parentNode.removeChild(button);
+    }
+    if (panel && panel.parentNode) {
+      panel.parentNode.removeChild(panel);
+    }
+
+    const overlay = global.document.querySelector(".sg-overlay");
+    if (overlay && overlay.parentNode) {
+      overlay.parentNode.removeChild(overlay);
+    }
+
+    global.document.body.classList.remove("sg-no-scroll");
+
+    state.dom = null;
+    state.controller = null;
+    state.mounted = false;
+  }
+
+  function toggleFloatingButton() {
+    if (state.mounted || global.document.getElementById("sg-floating-button")) {
+      removeMainUI();
+      return false;
+    }
+
+    createMainUI();
+    return true;
+  }
+
+  NAMESPACE.FloatingWidget = {
+    createMainUI,
+    removeMainUI,
+    toggleFloatingButton,
+    toggleMainUI() {
+      if (!state.controller) {
+        return;
+      }
+      state.controller.toggleMainUI();
+    },
+  };
 })(window);

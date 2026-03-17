@@ -66,6 +66,10 @@
   font-family: "Google Sans", "Segoe UI", Roboto, Arial, sans-serif;
 }
 
+#sg-main-ui {
+  transition: all 0.2s ease;
+}
+
 .sg-floating-panel.is-open {
   opacity: 1;
   transform: translateY(-50%) scale(1);

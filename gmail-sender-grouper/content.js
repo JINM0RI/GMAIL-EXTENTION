@@ -16,6 +16,20 @@
   let renderScheduled = false;
   let fullScanCompleted = false;
   let scanInProgress = false;
+  let buttonVisible = false;
+
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (!msg || msg.type !== "TOGGLE_FLOATING_BUTTON") {
+      return;
+    }
+
+    if (!NAMESPACE.FloatingWidget || typeof NAMESPACE.FloatingWidget.toggleFloatingButton !== "function") {
+      return;
+    }
+
+    buttonVisible = NAMESPACE.FloatingWidget.toggleFloatingButton();
+    return true;
+  });
 
   function normalizeText(value) {
     return String(value || "").replace(/\s+/g, " ").trim();

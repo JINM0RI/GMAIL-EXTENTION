@@ -2,13 +2,13 @@
   "manifest_version": 3,
   "name": "Gmail Sender Grouper",
   "version": "2.0.0",
-  "description": "Groups Gmail inbox emails by sender and shows results in the extension popup.",
+  "description": "Groups Gmail inbox emails by sender and shows results in a floating UI inside Gmail.",
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": ["https://mail.google.com/*"],
-  "action": {
-    "default_title": "Sender Grouper",
-    "default_popup": "popup.html"
+  "background": {
+    "service_worker": "background.js"
   },
+  "action": {},
   "content_scripts": [
     {
       "matches": ["https://mail.google.com/*"],
