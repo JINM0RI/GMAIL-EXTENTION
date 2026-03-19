@@ -18,6 +18,18 @@
     mounted: false,
   };
 
+  function sendRuntimeMessage(message) {
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message || "Runtime messaging failed"));
+          return;
+        }
+        resolve(response || null);
+      });
+    });
+  }
+
   function buildWidgetDom() {
     const button = document.createElement("button");
     button.id = "sg-floating-button";
@@ -39,7 +51,15 @@
       '    <h2 class="sg-widget-title">Sender Grouper</h2>',
       '    <p class="sg-widget-subtitle">Grouped Gmail Senders</p>',
       "  </div>",
-      '  <button type="button" class="sg-widget-close" aria-label="Close Sender Grouper">&times;</button>',
+      '  <div class="sg-widget-header-actions">',
+      '    <button type="button" id="sg-widget-refresh" class="sg-widget-refresh" aria-label="Refresh sender scan">',
+      '      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M17.65 6.35A7.95 7.95 0 0 0 12 4V1L7 6l5 5V7a5 5 0 1 1-5 5H5a7 7 0 1 0 12.65-5.65z"></path></svg>',
+      "    </button>",
+      '    <button type="button" id="auth-profile-btn" class="sg-widget-profile" aria-label="Switch Gmail account and scan">',
+      '      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5z"></path></svg>',
+      "    </button>",
+      '    <button type="button" class="sg-widget-close" aria-label="Close Sender Grouper">&times;</button>',
+      "  </div>",
       "</header>",
       '<section class="sg-widget-stats">',
       '  <article class="sg-widget-stat-card">',
@@ -66,6 +86,8 @@
       button,
       panel,
       closeButton: panel.querySelector(".sg-widget-close"),
+      refreshButton: panel.querySelector("#sg-widget-refresh"),
+      profileButton: panel.querySelector("#auth-profile-btn"),
       totalSendersNode: panel.querySelector("#sg-widget-total-senders"),
       totalEmailsNode: panel.querySelector("#sg-widget-total-emails"),
       searchInputNode: panel.querySelector("#sg-widget-search"),
@@ -78,6 +100,8 @@
 
   function createController(dom, renderer) {
     let isOpen = false;
+    let authInFlight = false;
+    let refreshInFlight = false;
 
     function openPanel() {
       isOpen = true;
@@ -110,6 +134,112 @@
 
     dom.button.addEventListener("click", toggleMainUI);
     dom.closeButton.addEventListener("click", closePanel);
+
+    async function handleRefreshClick() {
+      if (refreshInFlight || authInFlight) {
+        return;
+      }
+
+      refreshInFlight = true;
+      if (renderer && typeof renderer.showLoadingState === "function") {
+        renderer.showLoadingState();
+      }
+      if (dom.refreshButton) {
+        dom.refreshButton.disabled = true;
+      }
+
+      try {
+        const refreshResult = await sendRuntimeMessage({ type: "REFRESH_EMAILS" });
+        if (refreshResult && refreshResult.code === "ACCOUNT_MISMATCH") {
+          if (renderer && typeof renderer.showStatusMessage === "function") {
+            renderer.showStatusMessage(refreshResult.error);
+          }
+          return;
+        }
+        if (!refreshResult || !refreshResult.ok || !refreshResult.groupedData) {
+          throw new Error((refreshResult && refreshResult.error) || "Refresh scan failed");
+        }
+        renderer.setData(refreshResult.groupedData);
+      } catch (error) {
+        if (renderer && typeof renderer.showStatusMessage === "function") {
+          renderer.showStatusMessage(error && error.message ? error.message : "Refresh scan failed");
+        }
+        console.error("[SenderGrouper] Refresh failed", error && error.message ? error.message : error);
+      } finally {
+        if (dom.refreshButton) {
+          dom.refreshButton.disabled = false;
+        }
+        refreshInFlight = false;
+      }
+    }
+
+    if (dom.refreshButton) {
+      dom.refreshButton.addEventListener("click", () => {
+        handleRefreshClick();
+      });
+    }
+
+    async function handleProfileLoginClick() {
+      if (authInFlight) {
+        return;
+      }
+
+      authInFlight = true;
+      if (renderer && typeof renderer.showLoadingState === "function") {
+        renderer.showLoadingState();
+      }
+      if (dom.profileButton) {
+        dom.profileButton.disabled = true;
+      }
+      if (dom.refreshButton) {
+        dom.refreshButton.disabled = true;
+      }
+
+      try {
+        const tokenResult = await sendRuntimeMessage({
+          type: "GET_TOKEN",
+          interactive: true,
+          forceRefresh: true,
+          forceAccountPicker: true,
+        });
+
+        if (!tokenResult || !tokenResult.ok || !tokenResult.token) {
+          throw new Error((tokenResult && tokenResult.error) || "Failed to sign in");
+        }
+
+        const fetchResult = await sendRuntimeMessage({ type: "FETCH_EMAILS" });
+        if (fetchResult && fetchResult.code === "ACCOUNT_MISMATCH") {
+          if (renderer && typeof renderer.showStatusMessage === "function") {
+            renderer.showStatusMessage(fetchResult.error);
+          }
+          return;
+        }
+        if (!fetchResult || !fetchResult.ok || !fetchResult.groupedData) {
+          throw new Error((fetchResult && fetchResult.error) || "Failed to fetch latest 300 emails");
+        }
+
+        renderer.setData(fetchResult.groupedData);
+      } catch (error) {
+        if (renderer && typeof renderer.showStatusMessage === "function") {
+          renderer.showStatusMessage(error && error.message ? error.message : "Failed to fetch latest 300 emails");
+        }
+        console.error("[SenderGrouper] Manual login/fetch failed", error && error.message ? error.message : error);
+      } finally {
+        if (dom.profileButton) {
+          dom.profileButton.disabled = false;
+        }
+        if (dom.refreshButton) {
+          dom.refreshButton.disabled = false;
+        }
+        authInFlight = false;
+      }
+    }
+
+    if (dom.profileButton) {
+      dom.profileButton.addEventListener("click", () => {
+        handleProfileLoginClick();
+      });
+    }
 
     global.document.addEventListener("click", (event) => {
       if (!isOpen) {

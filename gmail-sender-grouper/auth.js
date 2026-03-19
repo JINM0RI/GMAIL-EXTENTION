@@ -30,7 +30,7 @@
     return { clientId, scope };
   }
 
-  function buildAuthUrl() {
+  function buildAuthUrl(forceAccountPicker = false) {
     const { clientId, scope } = getOauthConfig();
     const redirectURLFromApi = chrome.identity.getRedirectURL();
     const redirectURL = `https://${chrome.runtime.id}.chromiumapp.org/`;
@@ -45,6 +45,10 @@
       redirect_uri: redirectURL,
       scope,
     });
+
+    if (forceAccountPicker) {
+      params.set("prompt", "select_account");
+    }
 
     return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
   }
@@ -109,8 +113,8 @@
     });
   }
 
-  async function requestToken(interactive) {
-    const authUrl = buildAuthUrl();
+  async function requestToken(interactive, forceAccountPicker = false) {
+    const authUrl = buildAuthUrl(forceAccountPicker);
 
     try {
       return await launchFlow(authUrl, interactive);
@@ -126,17 +130,27 @@
     }
   }
 
-  async function getAuthToken(interactive = true, forceRefresh = false) {
-    if (forceRefresh) {
-      await clearAuthToken();
+  async function getAuthToken(interactive = true, forceRefresh = false, forceAccountPicker = false) {
+    if (forceRefresh || forceAccountPicker) {
+      await clearIdentityTokenCache();
     }
 
-    if (cachedToken && (!cachedTokenExpiresAt || Date.now() < cachedTokenExpiresAt)) {
+    if (!forceAccountPicker && cachedToken && (!cachedTokenExpiresAt || Date.now() < cachedTokenExpiresAt)) {
+      return cachedToken;
+    }
+
+    if (forceAccountPicker) {
+      if (!interactive) {
+        throw new Error("Authentication requires user interaction");
+      }
+      const tokenResult = await requestToken(true, true);
+      cachedToken = tokenResult.accessToken;
+      cachedTokenExpiresAt = tokenResult.expiresAt;
       return cachedToken;
     }
 
     try {
-      const tokenResult = await requestToken(false);
+      const tokenResult = await requestToken(false, false);
       cachedToken = tokenResult.accessToken;
       cachedTokenExpiresAt = tokenResult.expiresAt;
       return cachedToken;
@@ -144,7 +158,7 @@
       if (!interactive) {
         throw new Error("Authentication requires user interaction");
       }
-      const tokenResult = await requestToken(true);
+      const tokenResult = await requestToken(true, false);
       cachedToken = tokenResult.accessToken;
       cachedTokenExpiresAt = tokenResult.expiresAt;
       return cachedToken;

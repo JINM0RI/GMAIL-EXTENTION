@@ -3,7 +3,10 @@
   "name": "Gmail Sender Grouper",
   "oauth2": {
     "client_id": "282534969649-0vduuebhnud23oldrm3uhu21d2irv80s.apps.googleusercontent.com",
-    "scopes": ["https://www.googleapis.com/auth/gmail.readonly"]
+    "scopes": [
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/userinfo.email"
+    ]
   },
   "version": "2.0.0",
   "key": "MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQChU10GRgHIqKET/TgL8BwYKatFudKahaJeW5aTv0hPYHpv1oPao+vpCSrEPezaE3gNRL9Actdk65vAjMphI/rKou0lrd81lAKNl57NzYAy5ymrmv7GR/SuYOfgD4VkeiBp0vfI5yWhdFTNS+pNkDsIoSoaZSeP694tYyngFiZHVCBPY+QOp/81UwiOO/tAs6Nn9NQUgBLdRCMpzCcXgazunnAu4COxOXJKu2cjgTJjQQ5nWdkxnITFbpiXMSjK/dNCcw6XW9crjGDWmARWNOPuVWmAUQe2UjOtzKSvZv+Cr9GAKTwVQMNcHwDaiHeZjsBnC9x24mqhLfSOPwAFvnBRAgMBAAECggEAAOtDUbspshrueqQBTbrFw4gj5vcdXAP8M3gSGNqzbsBTR4/RRc2T6nVC6RtGiMzTl5UXVyalqM2EIEoCXSCiAnArKavJObo+HtBeTI3Ud8sZUaubB/DLqV1On4LMdRC9CTKfzA/aXFvCn+jEIkJQE8csljnn9R9C2hSr3brtPOVwzg0JqWhYFiqKhqv+ol7a4GrQWFVFfvu+fbMM3s7mOp8LuHaZSIPFDnq+RTzBMY5/eXEh+nQ1hlyMFhPOwZv+kspX2kyToXnfPBd3PC3GA4KuOHGpIzARtRnAZeim3LWU64dzeZ8OHRvyzCUYNCDV9ONUKJYyDL1RKamSYuJcgQKBgQDQ8ds4zjCP9OSTVTFJZl6UOtV/WkgvrLmb+765CVqiT27Zir0qeev5Ju1E9dkpY7SnWb+WSKSQzkAQC1Zn3gddY2HsvZoiribTKiCqnX5NgX+ZV0DHnz01Co/gyMqk8nsrEPQaUO1o1W8TGQx8Zn/n6l0yeR4Xr4JVlFrqlp0pRwKBgQDFqCfzodV+5tuyj/+98f8s7rTASKcXIQ/qwvA9PPBjLdrIWWdC936udGZOE8+C14gJ1lRCR3f3sEZ0dfwCsmQMpcCw8/n7T5DzpDbl2dmn1JZ0avk5G72GEGiJnpOYtzcwpOVbi7vDjmqBzlu+BKGHwx19P89Q7nKLj8mJPFTlpwKBgQDGAl2pEKWu1vqCsTp6/7tjp/nJrao5G+vt6X3N5xJwPOyk1jj8dvxsajpynrWE5ss9yOyqI/9ohzzot4XT+vJpyxPzAZ9/fCCo/wRkC8q08qMUkz59rueXS4IcGM0J0g1tO6zI/6ZtMc8IfzV48r4F7vERMvyUn6vZJDWgmMkpYwKBgQCuzIV4enh6n+NPSPXcn3UR4ZDMM/RBCiYvcXJQVeIpc9X2NMqTeJj540rOZcqwZbeTK46chuPbknLcb7MNF4JPhQ6h70H2NGl2bpV2NHC+cc0U6723+YZkV4J7olfZSL5wMIP9r9e/m+UpIrwTkbjgfXdI2vOXGSkHr4OF8GsMJQKBgHqkEbTAB+hr6F7W5Ay4PI3FhYwwVMSHoW51pEkikf+reluxJVp0eAqi9ZQ6IynEFV3rayNyGB+HW8+KB1YWaQU8VbxnoDAGMSA3yOjUVzLqFjJ0FPn8+05LuX+qhTcadYGH0ayQhyaF4bWFJ4gED2KltuNfFf50DqUxZiA2rcFS",

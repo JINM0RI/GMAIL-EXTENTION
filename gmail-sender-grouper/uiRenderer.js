@@ -56,6 +56,7 @@
       close,
       open(sender) {
         titleNode.textContent = `${sender.name} Emails`;
+        overlay.hidden = false;
         document.body.classList.add("sg-no-scroll");
       },
     };
@@ -104,33 +105,13 @@
       };
     }
 
-    function openGmailThread(threadId) {
-      const id = String(threadId || "").trim();
+    function openGmailMessage(messageId) {
+      const id = String(messageId || "").trim();
       if (!id) {
         return;
       }
 
-      const escapedId = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(id) : id.replace(/"/g, '\\"');
-      const selectors = [
-        `tr.zA[data-thread-id="${escapedId}"]`,
-        `tr.zA[data-legacy-thread-id="${escapedId}"]`,
-        `tr.zA[id*="${escapedId}"]`,
-      ];
-
-      const row = selectors
-        .map((selector) => document.querySelector(selector))
-        .find((element) => element instanceof HTMLElement);
-
-      if (row) {
-        const clickableTarget = row.querySelector("td.xY, span.bog, div[role='link']") || row;
-        clickableTarget.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-        clickableTarget.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
-        clickableTarget.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-        return;
-      }
-
-      // Fallback for cases where Gmail re-rendered or thread is outside the current viewport/page.
-      global.location.href = `https://mail.google.com/mail/u/0/#inbox/${encodeURIComponent(id)}`;
+      global.location.hash = `#inbox/${encodeURIComponent(id)}`;
     }
 
     function createModalEmailItem(email) {
@@ -155,13 +136,13 @@
       row.appendChild(time);
 
       row.addEventListener("click", () => {
-        if (!email.threadId) {
+        if (!email.messageId) {
           return;
         }
         if (modalRefs) {
           modalRefs.close();
         }
-        openGmailThread(email.threadId);
+        openGmailMessage(email.messageId);
       });
 
       return row;
@@ -261,10 +242,14 @@
         return;
       }
 
+      refs.listNode.hidden = false;
+      refs.emptyStateNode.textContent = "No sender data available yet.";
+
       refs.loadingNode.hidden = !state.isLoading;
 
       if (state.isLoading) {
         refs.listNode.innerHTML = "";
+        refs.listNode.hidden = true;
         refs.emptyStateNode.hidden = true;
         return;
       }
@@ -272,10 +257,12 @@
       refs.listNode.innerHTML = "";
 
       if (state.filteredSenders.length === 0) {
+        refs.listNode.hidden = true;
         refs.emptyStateNode.hidden = false;
         return;
       }
 
+      refs.listNode.hidden = false;
       refs.emptyStateNode.hidden = true;
       const fragment = document.createDocumentFragment();
       state.filteredSenders.forEach((sender) => {
@@ -304,6 +291,13 @@
 
     function setData(data) {
       state.isLoading = false;
+
+      if (refs.listNode) {
+        refs.listNode.hidden = false;
+      }
+      if (refs.emptyStateNode) {
+        refs.emptyStateNode.textContent = "No sender data available yet.";
+      }
 
       if (!data) {
         state.allSenders = [];
@@ -335,11 +329,49 @@
       renderList();
     }
 
+    function showLoadingState() {
+      state.isLoading = true;
+
+      if (refs.loadingNode) {
+        refs.loadingNode.hidden = false;
+        refs.loadingNode.textContent = "Loading 300 emails...";
+      }
+
+      if (refs.listNode) {
+        refs.listNode.innerHTML = "";
+        refs.listNode.hidden = true;
+      }
+
+      if (refs.emptyStateNode) {
+        refs.emptyStateNode.hidden = true;
+      }
+    }
+
+    function showStatusMessage(message) {
+      state.isLoading = false;
+
+      if (refs.loadingNode) {
+        refs.loadingNode.hidden = true;
+      }
+
+      if (refs.listNode) {
+        refs.listNode.innerHTML = "";
+        refs.listNode.hidden = true;
+      }
+
+      if (refs.emptyStateNode) {
+        refs.emptyStateNode.hidden = false;
+        refs.emptyStateNode.textContent = String(message || "No sender data available yet.");
+      }
+    }
+
     bindSearch();
 
     return {
       setData,
       setLoading,
+      showLoadingState,
+      showStatusMessage,
     };
   }
 

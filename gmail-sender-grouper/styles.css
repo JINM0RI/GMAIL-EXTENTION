@@ -86,6 +86,72 @@
   background: #ffffff;
 }
 
+.sg-widget-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sg-widget-profile {
+  border: 1px solid #d3d9df;
+  background: #f7fbff;
+  color: #35515f;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.sg-widget-profile:hover {
+  background: #eef6ff;
+  border-color: #b7cadc;
+}
+
+.sg-widget-profile:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.sg-widget-profile svg {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+}
+
+.sg-widget-refresh {
+  border: 1px solid #d3d9df;
+  background: #f7fbff;
+  color: #35515f;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.sg-widget-refresh:hover {
+  background: #eef6ff;
+  border-color: #b7cadc;
+}
+
+.sg-widget-refresh:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.sg-widget-refresh svg {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+}
+
 .sg-widget-title {
   margin: 0;
   font-size: 16px;
@@ -344,6 +410,7 @@
 .sg-email-row:hover {
   background: #f7fafe;
 }
+
 
 .sg-email-row:last-child {
   border-bottom: 0;

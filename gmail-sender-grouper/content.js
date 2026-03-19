@@ -12,30 +12,55 @@
 
   const NAMESPACE = (global.SenderGrouper = global.SenderGrouper || {});
 
-  function sendRuntimeMessage(message) {
-    return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage(message, (response) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message || "Runtime messaging failed"));
-          return;
-        }
-        resolve(response || null);
-      });
-    });
+  function extractEmailFromText(value) {
+    const text = String(value || "");
+    const match = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.exec(text);
+    return match ? match[0].toLowerCase() : "";
   }
 
-  async function requestTokenAndEmails() {
-    const tokenResult = await sendRuntimeMessage({ type: "GET_TOKEN" });
-    if (!tokenResult || !tokenResult.ok) {
-      throw new Error((tokenResult && tokenResult.error) || "Failed to get auth token");
+  function getVisibleGmailAccountEmail() {
+    const titleEmail = extractEmailFromText(document && document.title);
+    if (titleEmail) {
+      return titleEmail;
     }
 
-    const fetchResult = await sendRuntimeMessage({ type: "FETCH_EMAILS" });
-    if (!fetchResult || !fetchResult.ok) {
-      throw new Error((fetchResult && fetchResult.error) || "Failed to fetch emails");
+    const selectors = [
+      'a[aria-label*="Google Account"]',
+      'a[aria-label*="Google Account"][href*="accounts.google.com"]',
+      'div[aria-label*="Google Account"]',
+      'button[aria-label*="Google Account"]',
+      'a[aria-label*="Google Account"]',
+      'a[aria-label*="@"]',
+      'div[aria-label*="@"]',
+      'button[aria-label*="@"]',
+      'img[aria-label*="@"]',
+      '[data-email]',
+    ];
+
+    for (const selector of selectors) {
+      const nodes = Array.from(document.querySelectorAll(selector));
+      for (const node of nodes) {
+        const values = [
+          node.getAttribute && node.getAttribute("data-email"),
+          node.getAttribute && node.getAttribute("aria-label"),
+          node.getAttribute && node.getAttribute("title"),
+          node.textContent,
+        ];
+        for (const value of values) {
+          const email = extractEmailFromText(value);
+          if (email) {
+            return email;
+          }
+        }
+      }
     }
 
-    return fetchResult.groupedData;
+    return "";
+  }
+
+  function getGmailAccountIndex() {
+    const match = /\/mail\/u\/(\d+)\//i.exec(global.location.pathname || "");
+    return match ? Number.parseInt(match[1], 10) : null;
   }
 
   chrome.runtime.onMessage.addListener((msg) => {
@@ -47,18 +72,22 @@
       if (!NAMESPACE.FloatingWidget || typeof NAMESPACE.FloatingWidget.toggleFloatingButton !== "function") {
         return;
       }
-      const visible = NAMESPACE.FloatingWidget.toggleFloatingButton();
-      if (visible) {
-        requestTokenAndEmails().catch((error) => {
-          console.error("[SenderGrouper] Failed to sync Gmail data", error && error.message ? error.message : error);
-        });
-      }
+      NAMESPACE.FloatingWidget.toggleFloatingButton();
       return true;
     }
 
     if (msg.type === "SG_DATA_UPDATED") {
       // UI listens to chrome.storage.onChanged; this is an optional sync hint.
       return true;
+    }
+
+    if (msg.type === "GET_GMAIL_CONTEXT") {
+      return {
+        ok: true,
+        accountEmail: getVisibleGmailAccountEmail(),
+        accountIndex: getGmailAccountIndex(),
+        href: String(global.location.href || ""),
+      };
     }
 
     return undefined;

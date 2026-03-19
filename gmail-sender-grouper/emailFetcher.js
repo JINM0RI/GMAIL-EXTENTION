@@ -3,8 +3,12 @@
 
   const API_BASE = "https://www.googleapis.com/gmail/v1/users/me";
   const PAGE_SIZE = 100;
-  const DETAIL_BATCH_SIZE = 20;
-  const MAX_MESSAGE_SCAN = 600;
+  const DETAIL_BATCH_SIZE = 50;
+  const MAX_MESSAGE_SCAN = 300;
+  const INITIAL_ID_BUFFER = 500;
+  const EXTRA_ID_BUFFER = 200;
+  const GMAIL_UNITS_PER_SECOND_LIMIT = 250;
+  const MESSAGE_GET_UNITS = 5;
 
   function normalizeText(value) {
     return String(value || "").replace(/\s+/g, " ").trim();
@@ -12,6 +16,18 @@
 
   function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  function getAdaptiveThrottleMs(batchSize, elapsedMs, rateLimited) {
+    const requested = Math.max(1, Number(batchSize) || 1);
+    const minWindowMs = Math.ceil((requested * MESSAGE_GET_UNITS * 1000) / GMAIL_UNITS_PER_SECOND_LIMIT);
+    const remainingMs = Math.max(0, minWindowMs - Math.max(0, Number(elapsedMs) || 0));
+
+    if (rateLimited) {
+      return Math.max(remainingMs, 1200);
+    }
+
+    return remainingMs;
   }
 
   function getHeaderValue(headers, key) {
@@ -66,12 +82,12 @@
     return response.json();
   }
 
-  async function fetchAllMessageIds() {
+  async function fetchAllMessageIds(targetCount = INITIAL_ID_BUFFER, startPageToken = null) {
     const all = [];
-    let pageToken = null;
-    let pages = 0;
+    let pageToken = startPageToken;
+    let hasNextPage = true;
 
-    do {
+    while (all.length < targetCount && hasNextPage) {
       let url = `${API_BASE}/messages?maxResults=${PAGE_SIZE}&q=${encodeURIComponent("label:inbox")}`;
       if (pageToken) {
         url += `&pageToken=${encodeURIComponent(pageToken)}`;
@@ -82,27 +98,26 @@
         all.push(...data.messages);
       }
 
-      if (all.length >= MAX_MESSAGE_SCAN) {
-        return all.slice(0, MAX_MESSAGE_SCAN);
-      }
-
+      hasNextPage = Boolean(data.nextPageToken);
       pageToken = data.nextPageToken || null;
-      pages += 1;
+    }
 
-      if (pages > 600) {
-        break;
-      }
-    } while (pageToken);
-
-    return all.slice(0, MAX_MESSAGE_SCAN);
+    return {
+      ids: all,
+      nextPageToken: pageToken,
+    };
   }
 
   async function fetchMessageDetails(messageId) {
     const url = `${API_BASE}/messages/${encodeURIComponent(
       messageId
-    )}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`;
+    )}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date&fields=payload/headers,id,snippet,labelIds`;
 
     return fetchJson(url);
+  }
+
+  function isInboxMetadataMessage(message) {
+    return Array.isArray(message && message.labelIds) && message.labelIds.includes("INBOX");
   }
 
   function toNormalizedMessage(message) {
@@ -110,19 +125,24 @@
     const from = parseFromHeader(getHeaderValue(headers, "From"));
 
     return {
+      messageId: normalizeText(message && message.id),
       senderName: from.name,
       senderEmail: from.email,
       subject: normalizeText(getHeaderValue(headers, "Subject")) || "(No subject)",
       snippet: normalizeText(message && message.snippet),
       time: formatTime(getHeaderValue(headers, "Date"), message && message.internalDate),
       threadId: normalizeText(message && message.threadId) || normalizeText(message && message.id),
+      labelIds: Array.isArray(message && message.labelIds) ? message.labelIds.slice() : [],
     };
   }
 
   async function fetchAllMessagesDetailed() {
-    const ids = await fetchAllMessageIds();
+    const initialFetch = await fetchAllMessageIds(INITIAL_ID_BUFFER, null);
+    const ids = Array.isArray(initialFetch && initialFetch.ids) ? initialFetch.ids.slice() : [];
+    let nextPageToken = initialFetch ? initialFetch.nextPageToken : null;
+    console.log(`[SenderGrouper] Found ${ids.length} buffered message IDs before detail scan.`);
 
-    if (!ids.length) {
+    if (!ids.length && !nextPageToken) {
       return {
         scannedMessages: 0,
         processedMessages: 0,
@@ -131,14 +151,60 @@
     }
 
     const detailed = [];
+    const seenRequestMessageIds = new Set();
+    const seenResultMessageIds = new Set();
+    let scannedCount = 0;
+    let cursor = 0;
 
-    for (let i = 0; i < ids.length; i += DETAIL_BATCH_SIZE) {
-      const chunk = ids.slice(i, i + DETAIL_BATCH_SIZE);
+    while (detailed.length < MAX_MESSAGE_SCAN) {
+      if (cursor >= ids.length) {
+        if (!nextPageToken) {
+          break;
+        }
+
+        const topUp = await fetchAllMessageIds(EXTRA_ID_BUFFER, nextPageToken);
+        if (Array.isArray(topUp && topUp.ids) && topUp.ids.length) {
+          ids.push(...topUp.ids);
+        }
+        nextPageToken = topUp ? topUp.nextPageToken : null;
+
+        if (cursor >= ids.length && !nextPageToken) {
+          break;
+        }
+      }
+
+      const chunk = [];
+      while (chunk.length < DETAIL_BATCH_SIZE && cursor < ids.length) {
+        const item = ids[cursor];
+        cursor += 1;
+
+        const messageKey = normalizeText(item && item.id);
+        if (!messageKey || seenRequestMessageIds.has(messageKey)) {
+          continue;
+        }
+        seenRequestMessageIds.add(messageKey);
+        chunk.push(item);
+      }
+
+      if (!chunk.length) {
+        if (cursor >= ids.length && !nextPageToken) {
+          break;
+        }
+        continue;
+      }
+
+      scannedCount += chunk.length;
+
+      const batchStartedAt = Date.now();
+      let sawRateLimit = false;
       const results = await Promise.all(
         chunk.map((item) =>
           fetchMessageDetails(item.id)
             .then((message) => toNormalizedMessage(message))
             .catch((error) => {
+              if (error && (error.status === 429 || error.status === 403)) {
+                sawRateLimit = true;
+              }
               console.error("[SenderGrouper] Message detail fetch failed", {
                 messageId: item.id,
                 status: error && error.status,
@@ -150,25 +216,52 @@
       );
 
       results.forEach((result) => {
-        if (result && result.threadId) {
+        if (!result) {
+          return;
+        }
+
+        if (!isInboxMetadataMessage(result)) {
+          return;
+        }
+
+        const messageKey = normalizeText(result.messageId);
+
+        if (messageKey && !seenResultMessageIds.has(messageKey)) {
+          seenResultMessageIds.add(messageKey);
           detailed.push(result);
         }
       });
 
-      await sleep(220);
+      if (detailed.length >= MAX_MESSAGE_SCAN) {
+        break;
+      }
+
+      const elapsedMs = Date.now() - batchStartedAt;
+      const throttleMs = getAdaptiveThrottleMs(chunk.length, elapsedMs, sawRateLimit);
+
+      if (throttleMs > 0) {
+        await sleep(throttleMs);
+      }
     }
 
     return {
-      scannedMessages: ids.length,
-      processedMessages: detailed.length,
-      messages: detailed,
+      scannedMessages: scannedCount,
+      processedMessages: detailed.slice(0, MAX_MESSAGE_SCAN).length,
+      messages: detailed.slice(0, MAX_MESSAGE_SCAN),
     };
   }
 
   function groupBySender(messages) {
     const groups = new Map();
+    const seenMessageIds = new Set();
 
     messages.forEach((message) => {
+      const messageId = normalizeText(message && message.messageId);
+      if (!messageId || seenMessageIds.has(messageId)) {
+        return;
+      }
+      seenMessageIds.add(messageId);
+
       const senderEmail = normalizeText(message.senderEmail).toLowerCase() || "unknown@unknown";
       const senderName = normalizeText(message.senderName) || senderEmail || "Unknown Sender";
       const senderKey = senderEmail !== "unknown@unknown" ? senderEmail : `name:${senderName.toLowerCase()}`;
@@ -184,6 +277,7 @@
 
       const group = groups.get(senderKey);
       group.emails.push({
+        messageId: message.messageId,
         subject: message.subject,
         snippet: message.snippet,
         time: message.time,
