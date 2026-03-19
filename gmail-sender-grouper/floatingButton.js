@@ -151,7 +151,11 @@
       try {
         const refreshResult = await sendRuntimeMessage({ type: "REFRESH_EMAILS" });
         if (refreshResult && refreshResult.code === "ACCOUNT_MISMATCH") {
-          if (renderer && typeof renderer.showStatusMessage === "function") {
+          if (renderer && typeof renderer.showAccountMismatch === "function") {
+            renderer.showAccountMismatch(refreshResult.error, () => {
+              handleProfileLoginClick();
+            });
+          } else if (renderer && typeof renderer.showStatusMessage === "function") {
             renderer.showStatusMessage(refreshResult.error);
           }
           return;
@@ -209,7 +213,11 @@
 
         const fetchResult = await sendRuntimeMessage({ type: "FETCH_EMAILS" });
         if (fetchResult && fetchResult.code === "ACCOUNT_MISMATCH") {
-          if (renderer && typeof renderer.showStatusMessage === "function") {
+          if (renderer && typeof renderer.showAccountMismatch === "function") {
+            renderer.showAccountMismatch(fetchResult.error, () => {
+              handleProfileLoginClick();
+            });
+          } else if (renderer && typeof renderer.showStatusMessage === "function") {
             renderer.showStatusMessage(fetchResult.error);
           }
           return;

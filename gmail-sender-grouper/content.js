@@ -63,6 +63,14 @@
     return match ? Number.parseInt(match[1], 10) : null;
   }
 
+  function verifyIdentity() {
+    return {
+      pageEmail: getVisibleGmailAccountEmail(),
+      accountIndex: getGmailAccountIndex(),
+      href: String(global.location.href || ""),
+    };
+  }
+
   chrome.runtime.onMessage.addListener((msg) => {
     if (!msg || !msg.type) {
       return;
@@ -82,11 +90,13 @@
     }
 
     if (msg.type === "GET_GMAIL_CONTEXT") {
+      const identity = verifyIdentity();
       return {
         ok: true,
-        accountEmail: getVisibleGmailAccountEmail(),
-        accountIndex: getGmailAccountIndex(),
-        href: String(global.location.href || ""),
+        accountEmail: identity.pageEmail,
+        pageEmail: identity.pageEmail,
+        accountIndex: identity.accountIndex,
+        href: identity.href,
       };
     }
 

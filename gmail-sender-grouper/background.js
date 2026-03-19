@@ -30,8 +30,17 @@ function normalizeEmail(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function parseAccountIndexFromUrl(url) {
+  const match = /\/mail\/u\/(\d+)\//i.exec(String(url || ""));
+  if (!match) {
+    return null;
+  }
+  const parsed = Number.parseInt(match[1], 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 async function fetchAuthenticatedEmail() {
-  const response = await Auth.fetchWithAuth("https://www.googleapis.com/oauth2/v2/userinfo?alt=json", {
+  const response = await Auth.fetchWithAuth("https://www.googleapis.com/oauth2/v3/userinfo", {
     method: "GET",
     cache: "no-store",
   });
@@ -48,14 +57,17 @@ async function fetchAuthenticatedEmail() {
 async function verifyAccountMatch(tabId) {
   const authenticatedEmail = await fetchAuthenticatedEmail();
   const tabContext = await requestTabContext(tabId);
-  const visibleEmail = normalizeEmail(tabContext && tabContext.accountEmail);
+  const visibleEmail = normalizeEmail((tabContext && tabContext.pageEmail) || (tabContext && tabContext.accountEmail));
+  const accountIndex =
+    tabContext && Number.isFinite(Number(tabContext.accountIndex)) ? Number.parseInt(String(tabContext.accountIndex), 10) : null;
 
   if (visibleEmail && authenticatedEmail && visibleEmail !== authenticatedEmail) {
     return {
       ok: false,
       authenticatedEmail,
       visibleEmail,
-      message: `Wrong Account! You are signed in as ${authenticatedEmail}. Please switch accounts or Re-login.`,
+      accountIndex,
+      message: `Account Mismatch! You are viewing ${visibleEmail}, but signed in as ${authenticatedEmail}. Please switch to the correct Gmail account to access the service.`,
     };
   }
 
@@ -63,6 +75,7 @@ async function verifyAccountMatch(tabId) {
     ok: true,
     authenticatedEmail,
     visibleEmail,
+    accountIndex,
   };
 }
 
@@ -97,6 +110,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         const groupedData = await EmailFetcher.fetchAndGroupAllEmails();
+        groupedData.ownerEmail = accountCheck.authenticatedEmail;
+        groupedData.ownerAccountIndex = Number.isFinite(accountCheck.accountIndex) ? accountCheck.accountIndex : 0;
         await chrome.storage.local.set({ senderGrouperData: groupedData });
         sendResponse({ ok: true, groupedData });
         return;
@@ -118,8 +133,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const scanPromise = EmailFetcher.fetchAndGroupAllEmails();
         await chrome.storage.local.clear();
         const groupedData = await scanPromise;
+        groupedData.ownerEmail = accountCheck.authenticatedEmail;
+        groupedData.ownerAccountIndex = Number.isFinite(accountCheck.accountIndex) ? accountCheck.accountIndex : 0;
         await chrome.storage.local.set({ senderGrouperData: groupedData });
         sendResponse({ ok: true, groupedData });
+        return;
+      }
+
+      if (message.type === "OPEN_EMAIL") {
+        const messageId = String(message.messageId || "").trim();
+        if (!messageId) {
+          sendResponse({ ok: false, error: "Missing messageId" });
+          return;
+        }
+
+        const ownerEmail = normalizeEmail(message.ownerEmail);
+        const preferredIndex = Number.isFinite(Number(message.ownerAccountIndex))
+          ? Number.parseInt(String(message.ownerAccountIndex), 10)
+          : 0;
+
+        const targetUrl = ownerEmail
+          ? `https://mail.google.com/mail/u/${encodeURIComponent(ownerEmail)}/#inbox/${encodeURIComponent(messageId)}`
+          : `https://mail.google.com/mail/u/${preferredIndex}/#inbox/${encodeURIComponent(messageId)}`;
+
+        await chrome.tabs.create({ url: targetUrl, active: true });
+        sendResponse({ ok: true, action: "created-tab", ownerEmail, accountIndex: preferredIndex });
         return;
       }
 

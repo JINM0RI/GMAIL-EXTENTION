@@ -5,8 +5,6 @@
   const PAGE_SIZE = 100;
   const DETAIL_BATCH_SIZE = 50;
   const MAX_MESSAGE_SCAN = 300;
-  const INITIAL_ID_BUFFER = 500;
-  const EXTRA_ID_BUFFER = 200;
   const GMAIL_UNITS_PER_SECOND_LIMIT = 250;
   const MESSAGE_GET_UNITS = 5;
 
@@ -82,12 +80,11 @@
     return response.json();
   }
 
-  async function fetchAllMessageIds(targetCount = INITIAL_ID_BUFFER, startPageToken = null) {
+  async function fetchAllMessageIds(startPageToken = null) {
     const all = [];
     let pageToken = startPageToken;
-    let hasNextPage = true;
 
-    while (all.length < targetCount && hasNextPage) {
+    while (all.length < 300) {
       let url = `${API_BASE}/messages?maxResults=${PAGE_SIZE}&q=${encodeURIComponent("label:inbox")}`;
       if (pageToken) {
         url += `&pageToken=${encodeURIComponent(pageToken)}`;
@@ -98,12 +95,15 @@
         all.push(...data.messages);
       }
 
-      hasNextPage = Boolean(data.nextPageToken);
       pageToken = data.nextPageToken || null;
+
+      if (!pageToken) {
+        break;
+      }
     }
 
     return {
-      ids: all,
+      ids: all.slice(0, 300),
       nextPageToken: pageToken,
     };
   }
@@ -137,7 +137,7 @@
   }
 
   async function fetchAllMessagesDetailed() {
-    const initialFetch = await fetchAllMessageIds(INITIAL_ID_BUFFER, null);
+    const initialFetch = await fetchAllMessageIds(null);
     const ids = Array.isArray(initialFetch && initialFetch.ids) ? initialFetch.ids.slice() : [];
     let nextPageToken = initialFetch ? initialFetch.nextPageToken : null;
     console.log(`[SenderGrouper] Found ${ids.length} buffered message IDs before detail scan.`);
@@ -162,7 +162,7 @@
           break;
         }
 
-        const topUp = await fetchAllMessageIds(EXTRA_ID_BUFFER, nextPageToken);
+        const topUp = await fetchAllMessageIds(nextPageToken);
         if (Array.isArray(topUp && topUp.ids) && topUp.ids.length) {
           ids.push(...topUp.ids);
         }

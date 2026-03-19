@@ -67,6 +67,18 @@
   function create(options) {
     const refs = options || {};
 
+    function sendRuntimeMessage(message) {
+      return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(message, (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message || "Runtime messaging failed"));
+            return;
+          }
+          resolve(response || null);
+        });
+      });
+    }
+
     const state = {
       allSenders: [],
       filteredSenders: [],
@@ -77,6 +89,8 @@
       },
       updatedAt: null,
       isLoading: true,
+      ownerEmail: "",
+      ownerAccountIndex: 0,
     };
 
     function formatTime(timestamp) {
@@ -105,6 +119,48 @@
       };
     }
 
+    function extractEmailFromText(value) {
+      const text = String(value || "");
+      const match = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.exec(text);
+      return match ? match[0].toLowerCase() : "";
+    }
+
+    function getCurrentTabEmail() {
+      const titleEmail = extractEmailFromText(global.document && global.document.title);
+      if (titleEmail) {
+        return titleEmail;
+      }
+
+      const selectors = [
+        'a[aria-label*="Google Account"]',
+        'button[aria-label*="Google Account"]',
+        'a[aria-label*="@"]',
+        'button[aria-label*="@"]',
+        '[data-email]',
+      ];
+
+      for (const selector of selectors) {
+        const nodes = Array.from(global.document.querySelectorAll(selector));
+        for (const node of nodes) {
+          const candidates = [
+            node.getAttribute && node.getAttribute("data-email"),
+            node.getAttribute && node.getAttribute("aria-label"),
+            node.getAttribute && node.getAttribute("title"),
+            node.textContent,
+          ];
+
+          for (const value of candidates) {
+            const email = extractEmailFromText(value);
+            if (email) {
+              return email;
+            }
+          }
+        }
+      }
+
+      return "";
+    }
+
     function openGmailMessage(messageId) {
       const id = String(messageId || "").trim();
       if (!id) {
@@ -112,6 +168,37 @@
       }
 
       global.location.hash = `#inbox/${encodeURIComponent(id)}`;
+    }
+
+    async function openEmailCorrectly(messageId) {
+      const id = String(messageId || "").trim();
+      if (!id) {
+        return;
+      }
+
+      try {
+        const response = await sendRuntimeMessage({
+          type: "OPEN_EMAIL",
+          messageId: id,
+          ownerEmail: state.ownerEmail,
+          ownerAccountIndex: state.ownerAccountIndex,
+        });
+
+        if (response && response.ok) {
+          return;
+        }
+      } catch (_error) {
+        // Fallback to same-tab navigation only if background routing is unavailable.
+      }
+
+      if (state.ownerEmail) {
+        global.location.assign(
+          `https://mail.google.com/mail/u/${encodeURIComponent(state.ownerEmail)}/#inbox/${encodeURIComponent(id)}`
+        );
+        return;
+      }
+
+      openGmailMessage(id);
     }
 
     function createModalEmailItem(email) {
@@ -135,15 +222,36 @@
       row.appendChild(snippet);
       row.appendChild(time);
 
-      row.addEventListener("click", () => {
-        if (!email.messageId) {
+      async function handleRowClick() {
+        const messageId = String(email && email.messageId ? email.messageId : "").trim();
+        if (!messageId) {
           return;
         }
+
+        const authEmail = String(state.ownerEmail || "").trim().toLowerCase();
+        const tabEmail = getCurrentTabEmail();
+
         if (modalRefs) {
           modalRefs.close();
         }
-        openGmailMessage(email.messageId);
-      });
+
+        if (authEmail && tabEmail && authEmail === tabEmail) {
+          global.location.hash = `#inbox/${encodeURIComponent(messageId)}`;
+          return;
+        }
+
+        if (authEmail) {
+          global.open(
+            `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(authEmail)}#inbox/${encodeURIComponent(messageId)}`,
+            "_blank"
+          );
+          return;
+        }
+
+        await openEmailCorrectly(messageId);
+      }
+
+      row.addEventListener("click", handleRowClick);
 
       return row;
     }
@@ -319,6 +427,10 @@
         totalEmails: Number(data.totalEmails || 0),
       };
       state.updatedAt = data.updatedAt || null;
+      state.ownerEmail = String(data.ownerEmail || "").trim().toLowerCase();
+      state.ownerAccountIndex = Number.isFinite(Number(data.ownerAccountIndex))
+        ? Number.parseInt(String(data.ownerAccountIndex), 10)
+        : 0;
 
       applyFilter();
       renderAll();
@@ -330,16 +442,26 @@
     }
 
     function showLoadingState() {
-      state.isLoading = true;
+      state.isLoading = false;
 
       if (refs.loadingNode) {
-        refs.loadingNode.hidden = false;
-        refs.loadingNode.textContent = "Loading 300 emails...";
+        refs.loadingNode.hidden = true;
       }
 
+      state.stats = {
+        totalSenders: 0,
+        totalEmails: 0,
+      };
+      renderStats();
+
       if (refs.listNode) {
-        refs.listNode.innerHTML = "";
-        refs.listNode.hidden = true;
+        refs.listNode.hidden = false;
+        refs.listNode.innerHTML = '<div class="loading">Scanning 300 Latest Emails...</div>';
+      }
+
+      const senderListElement = global.document && global.document.getElementById("sender-list");
+      if (senderListElement) {
+        senderListElement.innerHTML = '<div class="loading">Scanning 300 Latest Emails...</div>';
       }
 
       if (refs.emptyStateNode) {
@@ -365,6 +487,36 @@
       }
     }
 
+    function showAccountMismatch(message, onRelogin) {
+      state.isLoading = false;
+
+      if (refs.loadingNode) {
+        refs.loadingNode.hidden = true;
+      }
+
+      if (refs.listNode) {
+        refs.listNode.innerHTML = "";
+        refs.listNode.hidden = true;
+      }
+
+      if (refs.emptyStateNode) {
+        refs.emptyStateNode.hidden = false;
+        refs.emptyStateNode.innerHTML = [
+          '<div class="sg-account-warning">',
+          `  <div class="sg-account-warning-text">${String(message || "Account mismatch detected.")}</div>`,
+          '  <button id="sg-warning-relogin" class="sg-account-warning-btn" type="button">Profile Login</button>',
+          "</div>",
+        ].join("");
+
+        const reloginButton = refs.emptyStateNode.querySelector("#sg-warning-relogin");
+        if (reloginButton && typeof onRelogin === "function") {
+          reloginButton.addEventListener("click", () => {
+            onRelogin();
+          });
+        }
+      }
+    }
+
     bindSearch();
 
     return {
@@ -372,6 +524,7 @@
       setLoading,
       showLoadingState,
       showStatusMessage,
+      showAccountMismatch,
     };
   }
 
