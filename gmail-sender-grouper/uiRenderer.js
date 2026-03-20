@@ -444,6 +444,13 @@
     function showLoadingState() {
       state.isLoading = false;
 
+      const scanningMarkup = [
+        '<div class="sg-scanning-state" role="status" aria-live="polite">',
+        '  <span class="sg-scanning-spinner" aria-hidden="true"></span>',
+        '  <span class="sg-scanning-text">Scanning emails...</span>',
+        "</div>",
+      ].join("");
+
       if (refs.loadingNode) {
         refs.loadingNode.hidden = true;
       }
@@ -456,12 +463,12 @@
 
       if (refs.listNode) {
         refs.listNode.hidden = false;
-        refs.listNode.innerHTML = '<div class="loading">Scanning 300 Latest Emails...</div>';
+        refs.listNode.innerHTML = scanningMarkup;
       }
 
       const senderListElement = global.document && global.document.getElementById("sender-list");
       if (senderListElement) {
-        senderListElement.innerHTML = '<div class="loading">Scanning 300 Latest Emails...</div>';
+        senderListElement.innerHTML = scanningMarkup;
       }
 
       if (refs.emptyStateNode) {
