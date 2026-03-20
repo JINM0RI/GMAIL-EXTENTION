@@ -156,15 +156,12 @@
       setThemeIcon(isDark);
     }
 
-    function toggleTheme() {
-      const isDark = global.document.body.classList.contains("dark-mode");
-      const nextTheme = isDark ? "light" : "dark";
-      applyTheme(nextTheme);
-      saveTheme(nextTheme);
-    }
-
     if (dom.themeToggleButton) {
-      dom.themeToggleButton.addEventListener("click", toggleTheme);
+      dom.themeToggleButton.addEventListener("click", () => {
+        const isDark = global.document.body.classList.toggle("dark-mode");
+        saveTheme(isDark ? "dark" : "light");
+        setThemeIcon(isDark);
+      });
     }
 
     applyTheme(global.document.body.classList.contains("dark-mode") ? "dark" : "light");
@@ -201,6 +198,83 @@
     dom.button.addEventListener("click", toggleMainUI);
     dom.closeButton.addEventListener("click", closePanel);
 
+    async function checkAuth(options) {
+      const settings = options || {};
+      const interactiveFallback = Boolean(settings.interactiveFallback);
+      const forceRefresh = Boolean(settings.forceRefresh);
+      const forceAccountPicker = Boolean(settings.forceAccountPicker);
+
+      const silentResult = await sendRuntimeMessage({
+        type: "GET_TOKEN",
+        interactive: false,
+        forceRefresh,
+        forceAccountPicker: false,
+      });
+
+      if (silentResult && silentResult.ok && silentResult.token) {
+        return {
+          ok: true,
+          token: silentResult.token,
+          interactive: false,
+        };
+      }
+
+      if (!interactiveFallback) {
+        return {
+          ok: false,
+          code: (silentResult && silentResult.code) || "AUTH_REQUIRED",
+          error: (silentResult && silentResult.error) || "Session expired. Click Profile Login to continue.",
+        };
+      }
+
+      const interactiveResult = await sendRuntimeMessage({
+        type: "GET_TOKEN",
+        interactive: true,
+        forceRefresh: true,
+        forceAccountPicker,
+      });
+
+      if (interactiveResult && interactiveResult.ok && interactiveResult.token) {
+        return {
+          ok: true,
+          token: interactiveResult.token,
+          interactive: true,
+        };
+      }
+
+      return {
+        ok: false,
+        code: (interactiveResult && interactiveResult.code) || "AUTH_FAILED",
+        error: (interactiveResult && interactiveResult.error) || "Failed to sign in",
+      };
+    }
+
+    async function runScan(messageType) {
+      const result = await sendRuntimeMessage({ type: messageType });
+      if (result && result.code === "AUTH_REQUIRED") {
+        if (renderer && typeof renderer.showStatusMessage === "function") {
+          renderer.showStatusMessage(result.error || "Session expired. Click Profile Login to continue.");
+        }
+        return false;
+      }
+      if (result && result.code === "ACCOUNT_MISMATCH") {
+        if (renderer && typeof renderer.showAccountMismatch === "function") {
+          renderer.showAccountMismatch(result.error, () => {
+            handleProfileLoginClick();
+          });
+        } else if (renderer && typeof renderer.showStatusMessage === "function") {
+          renderer.showStatusMessage(result.error);
+        }
+        return false;
+      }
+      if (!result || !result.ok || !result.groupedData) {
+        throw new Error((result && result.error) || "Email scan failed");
+      }
+
+      renderer.setData(result.groupedData);
+      return true;
+    }
+
     async function handleRefreshClick() {
       if (refreshInFlight || authInFlight) {
         return;
@@ -215,21 +289,14 @@
       }
 
       try {
-        const refreshResult = await sendRuntimeMessage({ type: "REFRESH_EMAILS" });
-        if (refreshResult && refreshResult.code === "ACCOUNT_MISMATCH") {
-          if (renderer && typeof renderer.showAccountMismatch === "function") {
-            renderer.showAccountMismatch(refreshResult.error, () => {
-              handleProfileLoginClick();
-            });
-          } else if (renderer && typeof renderer.showStatusMessage === "function") {
-            renderer.showStatusMessage(refreshResult.error);
+        const authResult = await checkAuth({ interactiveFallback: false, forceRefresh: true });
+        if (!authResult.ok) {
+          if (renderer && typeof renderer.showStatusMessage === "function") {
+            renderer.showStatusMessage(authResult.error || "Session expired. Click Profile Login to continue.");
           }
           return;
         }
-        if (!refreshResult || !refreshResult.ok || !refreshResult.groupedData) {
-          throw new Error((refreshResult && refreshResult.error) || "Refresh scan failed");
-        }
-        renderer.setData(refreshResult.groupedData);
+        await runScan("REFRESH_EMAILS");
       } catch (error) {
         if (renderer && typeof renderer.showStatusMessage === "function") {
           renderer.showStatusMessage(error && error.message ? error.message : "Refresh scan failed");
@@ -266,33 +333,15 @@
       }
 
       try {
-        const tokenResult = await sendRuntimeMessage({
-          type: "GET_TOKEN",
-          interactive: true,
+        const authResult = await checkAuth({
+          interactiveFallback: true,
           forceRefresh: true,
           forceAccountPicker: true,
         });
-
-        if (!tokenResult || !tokenResult.ok || !tokenResult.token) {
-          throw new Error((tokenResult && tokenResult.error) || "Failed to sign in");
+        if (!authResult.ok) {
+          throw new Error(authResult.error || "Failed to sign in");
         }
-
-        const fetchResult = await sendRuntimeMessage({ type: "FETCH_EMAILS" });
-        if (fetchResult && fetchResult.code === "ACCOUNT_MISMATCH") {
-          if (renderer && typeof renderer.showAccountMismatch === "function") {
-            renderer.showAccountMismatch(fetchResult.error, () => {
-              handleProfileLoginClick();
-            });
-          } else if (renderer && typeof renderer.showStatusMessage === "function") {
-            renderer.showStatusMessage(fetchResult.error);
-          }
-          return;
-        }
-        if (!fetchResult || !fetchResult.ok || !fetchResult.groupedData) {
-          throw new Error((fetchResult && fetchResult.error) || "Failed to fetch latest 300 emails");
-        }
-
-        renderer.setData(fetchResult.groupedData);
+        await runScan("FETCH_EMAILS");
       } catch (error) {
         if (renderer && typeof renderer.showStatusMessage === "function") {
           renderer.showStatusMessage(error && error.message ? error.message : "Failed to fetch latest 300 emails");
@@ -355,6 +404,33 @@
       });
     }
 
+    async function initializeFromSilentAuth() {
+      if (authInFlight || refreshInFlight) {
+        return;
+      }
+
+      if (renderer && typeof renderer.showLoadingState === "function") {
+        renderer.showLoadingState();
+      }
+
+      try {
+        const authResult = await checkAuth({ interactiveFallback: false });
+        if (!authResult.ok) {
+          if (renderer && typeof renderer.showStatusMessage === "function") {
+            renderer.showStatusMessage(authResult.error || "Session expired. Click Profile Login to continue.");
+          }
+          return;
+        }
+
+        await runScan("FETCH_EMAILS");
+      } catch (error) {
+        if (renderer && typeof renderer.showStatusMessage === "function") {
+          renderer.showStatusMessage(error && error.message ? error.message : "Failed to fetch latest 300 emails");
+        }
+        console.error("[SenderGrouper] Silent init auth/scan failed", error && error.message ? error.message : error);
+      }
+    }
+
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName !== "local" || !changes[STORAGE_KEY]) {
         return;
@@ -363,11 +439,13 @@
     });
 
     loadStorageData();
+    initializeFromSilentAuth();
 
     return {
       openPanel,
       closePanel,
       toggleMainUI,
+      checkAuth,
       isOpen() {
         return isOpen;
       },
