@@ -3,9 +3,34 @@ importScripts("auth.js", "emailFetcher.js");
 function sendToTab(tabId, payload) {
   return new Promise((resolve) => {
     chrome.tabs.sendMessage(tabId, payload, () => {
-      void chrome.runtime.lastError;
-      resolve();
+      if (chrome.runtime.lastError) {
+        const message = chrome.runtime.lastError.message || "Failed to send tab message";
+        // A listener may handle the message synchronously without sending a response.
+        if (/message port closed before a response was received/i.test(message)) {
+          resolve({ ok: true, warning: message });
+          return;
+        }
+        resolve({ ok: false, error: message });
+        return;
+      }
+      resolve({ ok: true });
     });
+  });
+}
+
+async function ensureGmailUiInjected(tabId) {
+  try {
+    await chrome.scripting.insertCSS({
+      target: { tabId },
+      files: ["styles.css"],
+    });
+  } catch (_error) {
+    // CSS may already be present; continue with script injection.
+  }
+
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    files: ["content.js", "uiRenderer.js", "floatingButton.js"],
   });
 }
 
@@ -28,15 +53,6 @@ function requestTabContext(tabId) {
 
 function normalizeEmail(value) {
   return String(value || "").trim().toLowerCase();
-}
-
-function parseAccountIndexFromUrl(url) {
-  const match = /\/mail\/u\/(\d+)\//i.exec(String(url || ""));
-  if (!match) {
-    return null;
-  }
-  const parsed = Number.parseInt(match[1], 10);
-  return Number.isFinite(parsed) ? parsed : null;
 }
 
 async function fetchAuthenticatedEmail() {
@@ -118,23 +134,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
 
       if (message.type === "REFRESH_EMAILS") {
-        const accountCheck = await verifyAccountMatch(sender && sender.tab ? sender.tab.id : null);
-        if (!accountCheck.ok) {
-          sendResponse({
-            ok: false,
-            code: "ACCOUNT_MISMATCH",
-            error: accountCheck.message,
-            authenticatedEmail: accountCheck.authenticatedEmail,
-            visibleEmail: accountCheck.visibleEmail,
-          });
-          return;
-        }
-
+        const authenticatedEmail = await fetchAuthenticatedEmail();
+        const tabContext = await requestTabContext(sender && sender.tab ? sender.tab.id : null);
+        const accountIndex = tabContext && Number.isFinite(Number(tabContext.accountIndex))
+          ? Number.parseInt(String(tabContext.accountIndex), 10)
+          : 0;
         const scanPromise = EmailFetcher.fetchAndGroupAllEmails();
-        await chrome.storage.local.clear();
+        await chrome.storage.local.remove("senderGrouperData");
         const groupedData = await scanPromise;
-        groupedData.ownerEmail = accountCheck.authenticatedEmail;
-        groupedData.ownerAccountIndex = Number.isFinite(accountCheck.accountIndex) ? accountCheck.accountIndex : 0;
+        groupedData.ownerEmail = authenticatedEmail;
+        groupedData.ownerAccountIndex = accountIndex;
         await chrome.storage.local.set({ senderGrouperData: groupedData });
         sendResponse({ ok: true, groupedData });
         return;
@@ -169,9 +178,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
       sendResponse({ ok: false, error: "Unsupported message type" });
     } catch (error) {
+      const messageText = error && error.message ? String(error.message) : "Unknown error";
+      const isAuthRequired = /requires user interaction|authentication required|login required/i.test(messageText);
       sendResponse({
         ok: false,
-        error: error && error.message ? error.message : "Unknown error",
+        code: isAuthRequired ? "AUTH_REQUIRED" : undefined,
+        error: messageText,
         status: error && error.status ? error.status : null,
       });
     }
@@ -186,5 +198,14 @@ chrome.action.onClicked.addListener(async (tab) => {
   }
 
   // Only open/close the floating UI. Auth now starts only from the profile icon in the injected panel.
+  const firstTry = await sendToTab(tab.id, { type: "TOGGLE_FLOATING_BUTTON" });
+  if (firstTry.ok) {
+    return;
+  }
+
+  // Common after extension reload/update: content script context is gone on existing Gmail tab.
+  await ensureGmailUiInjected(tab.id);
+
+  await new Promise((resolve) => setTimeout(resolve, 120));
   await sendToTab(tab.id, { type: "TOGGLE_FLOATING_BUTTON" });
 });

@@ -12,12 +12,14 @@
 
   const STORAGE_KEY = "senderGrouperData";
   const THEME_STORAGE_KEY = "theme";
+  const UI_VISIBILITY_KEY = "sgWidgetVisible";
   const NAMESPACE = (global.SenderGrouper = global.SenderGrouper || {});
   const state = {
     dom: null,
     controller: null,
     mounted: false,
     mounting: false,
+    watchdogId: null,
   };
 
   function applyThemeClass(theme) {
@@ -52,10 +54,31 @@
     return new Promise((resolve, reject) => {
       chrome.runtime.sendMessage(message, (response) => {
         if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message || "Runtime messaging failed"));
+          const runtimeErrorMessage = chrome.runtime.lastError.message || "Runtime messaging failed";
+          if (/extension context invalidated/i.test(runtimeErrorMessage)) {
+            reject(new Error("Extension was reloaded. Click the extension icon once and try again."));
+            return;
+          }
+          reject(new Error(runtimeErrorMessage));
           return;
         }
         resolve(response || null);
+      });
+    });
+  }
+
+  function persistWidgetVisibility(isVisible) {
+    chrome.storage.local.set({ [UI_VISIBILITY_KEY]: Boolean(isVisible) });
+  }
+
+  function readWidgetVisibility() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get([UI_VISIBILITY_KEY], (result) => {
+        if (chrome.runtime.lastError) {
+          resolve(false);
+          return;
+        }
+        resolve(Boolean(result[UI_VISIBILITY_KEY]));
       });
     });
   }
@@ -289,13 +312,7 @@
       }
 
       try {
-        const authResult = await checkAuth({ interactiveFallback: false, forceRefresh: true });
-        if (!authResult.ok) {
-          if (renderer && typeof renderer.showStatusMessage === "function") {
-            renderer.showStatusMessage(authResult.error || "Session expired. Click Profile Login to continue.");
-          }
-          return;
-        }
+        // Refresh path is intentionally silent; never force interactive re-auth here.
         await runScan("REFRESH_EMAILS");
       } catch (error) {
         if (renderer && typeof renderer.showStatusMessage === "function") {
@@ -486,6 +503,7 @@
         state.dom = dom;
         state.controller = controller;
         state.mounted = true;
+        persistWidgetVisibility(true);
       })
       .finally(() => {
         state.mounting = false;
@@ -513,6 +531,7 @@
     state.dom = null;
     state.controller = null;
     state.mounted = false;
+    persistWidgetVisibility(false);
   }
 
   function toggleFloatingButton() {
@@ -523,6 +542,30 @@
 
     createMainUI();
     return true;
+  }
+
+  function startWatchdog() {
+    if (state.watchdogId) {
+      return;
+    }
+
+    state.watchdogId = global.setInterval(() => {
+      if (!state.mounted || state.mounting) {
+        return;
+      }
+
+      const hasButton = Boolean(global.document.getElementById("sg-floating-button"));
+      const hasPanel = Boolean(global.document.getElementById("sg-main-ui"));
+
+      if (hasButton && hasPanel) {
+        return;
+      }
+
+      state.dom = null;
+      state.controller = null;
+      state.mounted = false;
+      createMainUI();
+    }, 2000);
   }
 
   NAMESPACE.FloatingWidget = {
@@ -540,8 +583,20 @@
   if (global.document.readyState === "loading") {
     global.document.addEventListener("DOMContentLoaded", () => {
       initTheme();
+      startWatchdog();
+      readWidgetVisibility().then((isVisible) => {
+        if (isVisible) {
+          createMainUI();
+        }
+      });
     });
   } else {
     initTheme();
+    startWatchdog();
+    readWidgetVisibility().then((isVisible) => {
+      if (isVisible) {
+        createMainUI();
+      }
+    });
   }
 })(window);

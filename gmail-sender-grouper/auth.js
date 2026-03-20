@@ -190,7 +190,7 @@
   }
 
   async function fetchWithAuth(url, options) {
-    let token = await getAuthToken(true, false);
+    let token = await getAuthToken(false, false);
     let response = await fetch(url, withAuthorizationHeader(options, token));
 
     if (response.status !== 401 && response.status !== 403) {
@@ -199,7 +199,7 @@
 
     // Token likely expired or revoked: clear cached token and retry once.
     await clearAuthToken();
-    token = await getAuthToken(true, true);
+    token = await getAuthToken(false, true);
     response = await fetch(url, withAuthorizationHeader(options, token));
 
     if (response.status === 401 || response.status === 403) {

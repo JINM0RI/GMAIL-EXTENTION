@@ -76,12 +76,20 @@
       return;
     }
 
+    if (msg.type === "SHOW_FLOATING_BUTTON") {
+      if (!NAMESPACE.FloatingWidget || typeof NAMESPACE.FloatingWidget.createMainUI !== "function") {
+        return;
+      }
+      NAMESPACE.FloatingWidget.createMainUI();
+      return;
+    }
+
     if (msg.type === "TOGGLE_FLOATING_BUTTON") {
       if (!NAMESPACE.FloatingWidget || typeof NAMESPACE.FloatingWidget.toggleFloatingButton !== "function") {
         return;
       }
       NAMESPACE.FloatingWidget.toggleFloatingButton();
-      return true;
+      return;
     }
 
     if (msg.type === "SG_DATA_UPDATED") {

@@ -3,10 +3,35 @@
 
   const API_BASE = "https://www.googleapis.com/gmail/v1/users/me";
   const PAGE_SIZE = 100;
-  const DETAIL_BATCH_SIZE = 50;
+  const DETAIL_BATCH_SIZE = 25;
   const MAX_MESSAGE_SCAN = 300;
+  const FAST_REFRESH_SCAN = 120;
+  const ID_OVERFETCH_BUFFER = 150;
   const GMAIL_UNITS_PER_SECOND_LIMIT = 250;
   const MESSAGE_GET_UNITS = 5;
+  const DETAIL_RETRY_LIMIT = 3;
+  const PERSONAL_PROVIDER_DOMAINS = new Set([
+    "gmail.com",
+    "googlemail.com",
+    "yahoo.com",
+    "ymail.com",
+    "rocketmail.com",
+    "outlook.com",
+    "hotmail.com",
+    "live.com",
+    "msn.com",
+    "icloud.com",
+    "me.com",
+    "mac.com",
+    "aol.com",
+    "protonmail.com",
+    "proton.me",
+    "zoho.com",
+    "gmx.com",
+    "mail.com",
+    "yandex.com",
+    "rediffmail.com",
+  ]);
 
   function normalizeText(value) {
     return String(value || "").replace(/\s+/g, " ").trim();
@@ -25,7 +50,8 @@
       return Math.max(remainingMs, 1200);
     }
 
-    return remainingMs;
+    // Keep a small steady pacing to avoid burst failures that drop messages.
+    return Math.max(remainingMs, 80);
   }
 
   function getHeaderValue(headers, key) {
@@ -62,6 +88,73 @@
     return date.toLocaleString();
   }
 
+  function getDomainFromEmail(email) {
+    const value = normalizeText(email).toLowerCase();
+    const atIndex = value.lastIndexOf("@");
+    if (atIndex < 0 || atIndex === value.length - 1) {
+      return "";
+    }
+    return value.slice(atIndex + 1);
+  }
+
+  function getRootDomain(domain) {
+    const value = normalizeText(domain).toLowerCase();
+    if (!value) {
+      return "";
+    }
+
+    const parts = value.split(".").filter(Boolean);
+    if (parts.length <= 2) {
+      return value;
+    }
+
+    const secondLevelTlds = new Set(["co", "com", "org", "net", "gov", "edu", "ac"]);
+    const penultimate = parts[parts.length - 2];
+    if (parts.length >= 3 && secondLevelTlds.has(penultimate) && parts[parts.length - 1].length === 2) {
+      return parts.slice(-3).join(".");
+    }
+
+    return parts.slice(-2).join(".");
+  }
+
+  function toCompanyNameFromDomain(domain) {
+    const root = getRootDomain(domain);
+    const label = root.split(".")[0] || root;
+    return label
+      .split(/[._-]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  }
+
+  function deriveSenderGroup(senderEmail) {
+    const email = normalizeText(senderEmail).toLowerCase();
+    const domain = getDomainFromEmail(email);
+    const rootDomain = getRootDomain(domain);
+
+    if (!email || email === "unknown@unknown" || !domain) {
+      return {
+        groupKey: "unknown@unknown",
+        groupName: "Unknown Sender",
+        groupEmail: "unknown@unknown",
+      };
+    }
+
+    if (PERSONAL_PROVIDER_DOMAINS.has(rootDomain)) {
+      return {
+        groupKey: `email:${email}`,
+        groupName: "",
+        groupEmail: email,
+      };
+    }
+
+    return {
+      groupKey: `company:${rootDomain}`,
+      groupName: toCompanyNameFromDomain(rootDomain),
+      groupEmail: rootDomain,
+    };
+  }
+
   async function fetchJson(url) {
     const response = await global.Auth.fetchWithAuth(url, {
       method: "GET",
@@ -80,11 +173,11 @@
     return response.json();
   }
 
-  async function fetchAllMessageIds(startPageToken = null) {
+  async function fetchAllMessageIds(startPageToken = null, maxMessages = MAX_MESSAGE_SCAN) {
     const all = [];
     let pageToken = startPageToken;
 
-    while (all.length < 300) {
+    while (all.length < maxMessages) {
       let url = `${API_BASE}/messages?maxResults=${PAGE_SIZE}&q=${encodeURIComponent("label:inbox")}`;
       if (pageToken) {
         url += `&pageToken=${encodeURIComponent(pageToken)}`;
@@ -103,7 +196,7 @@
     }
 
     return {
-      ids: all.slice(0, 300),
+      ids: all.slice(0, maxMessages),
       nextPageToken: pageToken,
     };
   }
@@ -114,6 +207,33 @@
     )}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date&fields=payload/headers,id,snippet,labelIds`;
 
     return fetchJson(url);
+  }
+
+  function isRetryableDetailError(error) {
+    const status = Number(error && error.status);
+    return status === 429 || status === 403 || (status >= 500 && status < 600);
+  }
+
+  async function fetchMessageDetailsWithRetry(messageId) {
+    let attempt = 0;
+    let waitMs = 250;
+
+    while (attempt < DETAIL_RETRY_LIMIT) {
+      try {
+        const message = await fetchMessageDetails(messageId);
+        return toNormalizedMessage(message);
+      } catch (error) {
+        attempt += 1;
+        if (!isRetryableDetailError(error) || attempt >= DETAIL_RETRY_LIMIT) {
+          throw error;
+        }
+
+        await sleep(waitMs);
+        waitMs *= 2;
+      }
+    }
+
+    return null;
   }
 
   function isInboxMetadataMessage(message) {
@@ -136,8 +256,9 @@
     };
   }
 
-  async function fetchAllMessagesDetailed() {
-    const initialFetch = await fetchAllMessageIds(null);
+  async function fetchAllMessagesDetailed(maxMessages = MAX_MESSAGE_SCAN) {
+    const targetSize = Math.max(1, Number(maxMessages) || MAX_MESSAGE_SCAN);
+    const initialFetch = await fetchAllMessageIds(null, targetSize + ID_OVERFETCH_BUFFER);
     const ids = Array.isArray(initialFetch && initialFetch.ids) ? initialFetch.ids.slice() : [];
     let nextPageToken = initialFetch ? initialFetch.nextPageToken : null;
     console.log(`[SenderGrouper] Found ${ids.length} buffered message IDs before detail scan.`);
@@ -156,13 +277,14 @@
     let scannedCount = 0;
     let cursor = 0;
 
-    while (detailed.length < MAX_MESSAGE_SCAN) {
+    while (detailed.length < targetSize) {
       if (cursor >= ids.length) {
         if (!nextPageToken) {
           break;
         }
 
-        const topUp = await fetchAllMessageIds(nextPageToken);
+        const remaining = Math.max(1, targetSize - detailed.length);
+        const topUp = await fetchAllMessageIds(nextPageToken, Math.max(100, remaining + ID_OVERFETCH_BUFFER));
         if (Array.isArray(topUp && topUp.ids) && topUp.ids.length) {
           ids.push(...topUp.ids);
         }
@@ -199,8 +321,7 @@
       let sawRateLimit = false;
       const results = await Promise.all(
         chunk.map((item) =>
-          fetchMessageDetails(item.id)
-            .then((message) => toNormalizedMessage(message))
+          fetchMessageDetailsWithRetry(item.id)
             .catch((error) => {
               if (error && (error.status === 429 || error.status === 403)) {
                 sawRateLimit = true;
@@ -232,7 +353,7 @@
         }
       });
 
-      if (detailed.length >= MAX_MESSAGE_SCAN) {
+      if (detailed.length >= targetSize) {
         break;
       }
 
@@ -246,8 +367,8 @@
 
     return {
       scannedMessages: scannedCount,
-      processedMessages: detailed.slice(0, MAX_MESSAGE_SCAN).length,
-      messages: detailed.slice(0, MAX_MESSAGE_SCAN),
+      processedMessages: detailed.slice(0, targetSize).length,
+      messages: detailed.slice(0, targetSize),
     };
   }
 
@@ -264,12 +385,13 @@
 
       const senderEmail = normalizeText(message.senderEmail).toLowerCase() || "unknown@unknown";
       const senderName = normalizeText(message.senderName) || senderEmail || "Unknown Sender";
-      const senderKey = senderEmail !== "unknown@unknown" ? senderEmail : `name:${senderName.toLowerCase()}`;
+      const grouping = deriveSenderGroup(senderEmail);
+      const senderKey = grouping.groupKey;
 
       if (!groups.has(senderKey)) {
         groups.set(senderKey, {
-          name: senderName,
-          email: senderEmail,
+          name: grouping.groupName || senderName,
+          email: grouping.groupEmail || senderEmail,
           count: 0,
           emails: [],
         });
@@ -296,8 +418,9 @@
     };
   }
 
-  async function fetchAndGroupAllEmails() {
-    const detailResult = await fetchAllMessagesDetailed();
+  async function fetchAndGroupAllEmails(maxMessages = MAX_MESSAGE_SCAN) {
+    const requestedSize = Math.max(1, Number(maxMessages) || MAX_MESSAGE_SCAN);
+    const detailResult = await fetchAllMessagesDetailed(requestedSize);
     const grouped = groupBySender(detailResult.messages);
 
     return {
@@ -309,6 +432,7 @@
   }
 
   global.EmailFetcher = {
+    FAST_REFRESH_SCAN,
     fetchAndGroupAllEmails,
   };
 })(globalThis);
