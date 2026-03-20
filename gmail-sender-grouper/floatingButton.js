@@ -272,10 +272,12 @@
       };
     }
 
-    async function runScan(messageType) {
+    async function runScan(messageType, options) {
+      const settings = options || {};
+      const suppressAuthMessage = Boolean(settings.suppressAuthMessage);
       const result = await sendRuntimeMessage({ type: messageType });
       if (result && result.code === "AUTH_REQUIRED") {
-        if (renderer && typeof renderer.showStatusMessage === "function") {
+        if (!suppressAuthMessage && renderer && typeof renderer.showStatusMessage === "function") {
           renderer.showStatusMessage(result.error || "Session expired. Click Profile Login to continue.");
         }
         return false;
@@ -312,8 +314,29 @@
       }
 
       try {
-        // Refresh path is intentionally silent; never force interactive re-auth here.
-        await runScan("REFRESH_EMAILS");
+        let scanOk = await runScan("REFRESH_EMAILS", { suppressAuthMessage: true });
+
+        // If silent refresh failed due to token expiry, retry after one interactive auth.
+        if (!scanOk) {
+          const authResult = await checkAuth({
+            interactiveFallback: true,
+            forceRefresh: true,
+            forceAccountPicker: false,
+          });
+
+          if (!authResult.ok) {
+            throw new Error(authResult.error || "Authentication failed during refresh");
+          }
+
+          if (renderer && typeof renderer.showLoadingState === "function") {
+            renderer.showLoadingState();
+          }
+
+          scanOk = await runScan("REFRESH_EMAILS");
+          if (!scanOk) {
+            throw new Error("Unable to refresh emails. Please try Profile Login.");
+          }
+        }
       } catch (error) {
         if (renderer && typeof renderer.showStatusMessage === "function") {
           renderer.showStatusMessage(error && error.message ? error.message : "Refresh scan failed");

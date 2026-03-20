@@ -140,7 +140,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           ? Number.parseInt(String(tabContext.accountIndex), 10)
           : 0;
         const scanPromise = EmailFetcher.fetchAndGroupAllEmails();
-        await chrome.storage.local.remove("senderGrouperData");
         const groupedData = await scanPromise;
         groupedData.ownerEmail = authenticatedEmail;
         groupedData.ownerAccountIndex = accountIndex;
