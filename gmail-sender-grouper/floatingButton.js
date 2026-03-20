@@ -11,12 +11,42 @@
   global.__SG_FLOATING_WIDGET_INITIALIZED__ = true;
 
   const STORAGE_KEY = "senderGrouperData";
+  const THEME_STORAGE_KEY = "theme";
   const NAMESPACE = (global.SenderGrouper = global.SenderGrouper || {});
   const state = {
     dom: null,
     controller: null,
     mounted: false,
+    mounting: false,
   };
+
+  function applyThemeClass(theme) {
+    const isDark = theme === "dark";
+    global.document.body.classList.toggle("dark-mode", isDark);
+    return isDark;
+  }
+
+  function initTheme() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get([THEME_STORAGE_KEY], (result) => {
+        const theme = chrome.runtime.lastError ? "light" : result[THEME_STORAGE_KEY] === "dark" ? "dark" : "light";
+        applyThemeClass(theme);
+        resolve(theme);
+      });
+    });
+  }
+
+  function getSavedTheme() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get([THEME_STORAGE_KEY], (result) => {
+        if (chrome.runtime.lastError) {
+          resolve("light");
+          return;
+        }
+        resolve(result[THEME_STORAGE_KEY] === "dark" ? "dark" : "light");
+      });
+    });
+  }
 
   function sendRuntimeMessage(message) {
     return new Promise((resolve, reject) => {
@@ -42,7 +72,7 @@
 
     const panel = document.createElement("section");
     panel.id = "sg-main-ui";
-    panel.className = "sg-floating-panel";
+    panel.className = "popup-container sg-floating-panel";
     panel.setAttribute("aria-hidden", "true");
 
     panel.innerHTML = [
@@ -55,6 +85,10 @@
       '    <button type="button" id="sg-widget-refresh" class="sg-widget-refresh" aria-label="Refresh sender scan">',
       '      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M17.65 6.35A7.95 7.95 0 0 0 12 4V1L7 6l5 5V7a5 5 0 1 1-5 5H5a7 7 0 1 0 12.65-5.65z"></path></svg>',
       "    </button>",
+      '    <button type="button" id="theme-toggle" class="sg-widget-theme" aria-label="Enable dark mode" title="Enable dark mode">',
+      '      <svg class="sg-theme-icon sg-theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3a1 1 0 0 1 .58 1.81 7 7 0 1 0 8.61 8.61A1 1 0 0 1 22.81 14 9 9 0 1 1 12 3z"></path></svg>',
+      '      <svg class="sg-theme-icon sg-theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"></circle><path d="M12 2a1 1 0 0 1 1 1v2a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1zm0 15a1 1 0 0 1 1 1v2a1 1 0 1 1-2 0v-2a1 1 0 0 1 1-1zm10-5a1 1 0 0 1-1 1h-2a1 1 0 1 1 0-2h2a1 1 0 0 1 1 1zM5 12a1 1 0 0 1-1 1H2a1 1 0 1 1 0-2h2a1 1 0 0 1 1 1zm13.07-6.07a1 1 0 0 1 1.41 1.41l-1.41 1.41a1 1 0 0 1-1.41-1.41zM7.34 16.66a1 1 0 0 1 1.41 1.41l-1.41 1.41a1 1 0 0 1-1.41-1.41zm0-9.32L5.93 5.93A1 1 0 1 1 7.34 4.52l1.41 1.41A1 1 0 0 1 7.34 7.34zm11.73 11.73a1 1 0 0 1-1.41 0l-1.41-1.41a1 1 0 0 1 1.41-1.41l1.41 1.41a1 1 0 0 1 0 1.41z"></path></svg>',
+      "    </button>",
       '    <button type="button" id="auth-profile-btn" class="sg-widget-profile" aria-label="Switch Gmail account and scan">',
       '      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5z"></path></svg>',
       "    </button>",
@@ -62,11 +96,11 @@
       "  </div>",
       "</header>",
       '<section class="sg-widget-stats">',
-      '  <article class="sg-widget-stat-card">',
+      '  <article class="stat-card sg-widget-stat-card">',
       '    <div class="sg-widget-stat-label">Total Senders</div>',
       '    <div id="sg-widget-total-senders" class="sg-widget-stat-value">0</div>',
       "  </article>",
-      '  <article class="sg-widget-stat-card">',
+      '  <article class="stat-card sg-widget-stat-card">',
       '    <div class="sg-widget-stat-label">Total Emails</div>',
       '    <div id="sg-widget-total-emails" class="sg-widget-stat-value">0</div>',
       "  </article>",
@@ -87,6 +121,7 @@
       panel,
       closeButton: panel.querySelector(".sg-widget-close"),
       refreshButton: panel.querySelector("#sg-widget-refresh"),
+      themeToggleButton: panel.querySelector("#theme-toggle"),
       profileButton: panel.querySelector("#auth-profile-btn"),
       totalSendersNode: panel.querySelector("#sg-widget-total-senders"),
       totalEmailsNode: panel.querySelector("#sg-widget-total-emails"),
@@ -102,6 +137,37 @@
     let isOpen = false;
     let authInFlight = false;
     let refreshInFlight = false;
+
+    function saveTheme(theme) {
+      chrome.storage.local.set({ [THEME_STORAGE_KEY]: theme });
+    }
+
+    function setThemeIcon(isDark) {
+      if (!dom.themeToggleButton) {
+        return;
+      }
+      dom.themeToggleButton.setAttribute("aria-pressed", isDark ? "true" : "false");
+      dom.themeToggleButton.setAttribute("aria-label", isDark ? "Enable light mode" : "Enable dark mode");
+      dom.themeToggleButton.title = isDark ? "Enable light mode" : "Enable dark mode";
+    }
+
+    function applyTheme(theme) {
+      const isDark = applyThemeClass(theme);
+      setThemeIcon(isDark);
+    }
+
+    function toggleTheme() {
+      const isDark = global.document.body.classList.contains("dark-mode");
+      const nextTheme = isDark ? "light" : "dark";
+      applyTheme(nextTheme);
+      saveTheme(nextTheme);
+    }
+
+    if (dom.themeToggleButton) {
+      dom.themeToggleButton.addEventListener("click", toggleTheme);
+    }
+
+    applyTheme(global.document.body.classList.contains("dark-mode") ? "dark" : "light");
 
     function openPanel() {
       isOpen = true;
@@ -314,29 +380,38 @@
       return;
     }
 
-    if (state.mounted || global.document.getElementById("sg-floating-button")) {
+    if (state.mounted || state.mounting || global.document.getElementById("sg-floating-button")) {
       state.mounted = true;
       return;
     }
 
-    const dom = buildWidgetDom();
-    global.document.body.appendChild(dom.button);
-    global.document.body.appendChild(dom.panel);
+    state.mounting = true;
+    initTheme()
+      .then((theme) => {
+        applyThemeClass(theme);
 
-    const renderer = NAMESPACE.UiRenderer.create({
-      totalSendersNode: dom.totalSendersNode,
-      totalEmailsNode: dom.totalEmailsNode,
-      searchInputNode: dom.searchInputNode,
-      loadingNode: dom.loadingNode,
-      emptyStateNode: dom.emptyStateNode,
-      listNode: dom.listNode,
-      updatedAtNode: dom.updatedAtNode,
-    });
+        const dom = buildWidgetDom();
+        global.document.body.appendChild(dom.button);
+        global.document.body.appendChild(dom.panel);
 
-    const controller = createController(dom, renderer);
-    state.dom = dom;
-    state.controller = controller;
-    state.mounted = true;
+        const renderer = NAMESPACE.UiRenderer.create({
+          totalSendersNode: dom.totalSendersNode,
+          totalEmailsNode: dom.totalEmailsNode,
+          searchInputNode: dom.searchInputNode,
+          loadingNode: dom.loadingNode,
+          emptyStateNode: dom.emptyStateNode,
+          listNode: dom.listNode,
+          updatedAtNode: dom.updatedAtNode,
+        });
+
+        const controller = createController(dom, renderer);
+        state.dom = dom;
+        state.controller = controller;
+        state.mounted = true;
+      })
+      .finally(() => {
+        state.mounting = false;
+      });
   }
 
   function removeMainUI() {
@@ -383,4 +458,12 @@
       state.controller.toggleMainUI();
     },
   };
+
+  if (global.document.readyState === "loading") {
+    global.document.addEventListener("DOMContentLoaded", () => {
+      initTheme();
+    });
+  } else {
+    initTheme();
+  }
 })(window);

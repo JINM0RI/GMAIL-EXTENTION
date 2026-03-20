@@ -309,7 +309,7 @@
 
     function createSenderRow(sender) {
       const row = document.createElement("article");
-      row.className = "sg-widget-row";
+      row.className = "sender-row sg-widget-row";
       row.tabIndex = 0;
 
       const identity = document.createElement("div");
