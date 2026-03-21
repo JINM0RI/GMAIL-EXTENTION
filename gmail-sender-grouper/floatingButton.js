@@ -227,6 +227,30 @@
       const forceRefresh = Boolean(settings.forceRefresh);
       const forceAccountPicker = Boolean(settings.forceAccountPicker);
 
+      // Profile login should force the account picker and skip silent token reuse.
+      if (forceAccountPicker) {
+        const interactiveResult = await sendRuntimeMessage({
+          type: "GET_TOKEN",
+          interactive: true,
+          forceRefresh: true,
+          forceAccountPicker: true,
+        });
+
+        if (interactiveResult && interactiveResult.ok && interactiveResult.token) {
+          return {
+            ok: true,
+            token: interactiveResult.token,
+            interactive: true,
+          };
+        }
+
+        return {
+          ok: false,
+          code: (interactiveResult && interactiveResult.code) || "AUTH_FAILED",
+          error: (interactiveResult && interactiveResult.error) || "Failed to sign in",
+        };
+      }
+
       const silentResult = await sendRuntimeMessage({
         type: "GET_TOKEN",
         interactive: false,
