@@ -277,7 +277,7 @@
       const interactiveResult = await sendRuntimeMessage({
         type: "GET_TOKEN",
         interactive: true,
-        forceRefresh: true,
+        forceRefresh,
         forceAccountPicker,
       });
 
@@ -299,12 +299,19 @@
     async function runScan(messageType, options) {
       const settings = options || {};
       const suppressAuthMessage = Boolean(settings.suppressAuthMessage);
+      const returnDetails = Boolean(settings.returnDetails);
       const result = await sendRuntimeMessage({ type: messageType });
       if (result && result.code === "AUTH_REQUIRED") {
         if (!suppressAuthMessage && renderer && typeof renderer.showStatusMessage === "function") {
           renderer.showStatusMessage(result.error || "Session expired. Click Profile Login to continue.");
         }
-        return false;
+        return returnDetails
+          ? {
+              ok: false,
+              code: "AUTH_REQUIRED",
+              error: result.error || "Session expired. Click Profile Login to continue.",
+            }
+          : false;
       }
       if (result && result.code === "ACCOUNT_MISMATCH") {
         if (renderer && typeof renderer.showAccountMismatch === "function") {
@@ -314,14 +321,26 @@
         } else if (renderer && typeof renderer.showStatusMessage === "function") {
           renderer.showStatusMessage(result.error);
         }
-        return false;
+        return returnDetails
+          ? {
+              ok: false,
+              code: "ACCOUNT_MISMATCH",
+              error: result.error || "Account mismatch",
+            }
+          : false;
       }
       if (!result || !result.ok || !result.groupedData) {
         throw new Error((result && result.error) || "Email scan failed");
       }
 
       renderer.setData(result.groupedData);
-      return true;
+      return returnDetails
+        ? {
+            ok: true,
+            code: null,
+            error: null,
+          }
+        : true;
     }
 
     async function handleRefreshClick() {
@@ -338,13 +357,16 @@
       }
 
       try {
-        let scanOk = await runScan("REFRESH_EMAILS", { suppressAuthMessage: true });
+        let scanResult = await runScan("REFRESH_EMAILS", {
+          suppressAuthMessage: true,
+          returnDetails: true,
+        });
 
-        // If silent refresh failed due to token expiry, retry after one interactive auth.
-        if (!scanOk) {
+        // Retry with an interactive auth only when Gmail reports auth is required.
+        if (!scanResult.ok && scanResult.code === "AUTH_REQUIRED") {
           const authResult = await checkAuth({
             interactiveFallback: true,
-            forceRefresh: true,
+            forceRefresh: false,
             forceAccountPicker: false,
           });
 
@@ -356,8 +378,8 @@
             renderer.showLoadingState();
           }
 
-          scanOk = await runScan("REFRESH_EMAILS");
-          if (!scanOk) {
+          scanResult = await runScan("REFRESH_EMAILS", { returnDetails: true });
+          if (!scanResult.ok) {
             throw new Error("Unable to refresh emails. Please try Profile Login.");
           }
         }

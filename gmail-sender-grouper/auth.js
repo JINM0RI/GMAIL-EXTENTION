@@ -2,9 +2,72 @@
   "use strict";
 
   const AUTH_CLIENT_ID = "282534969649-0vduuebhnud23oldrm3uhu21d2irv80s.apps.googleusercontent.com";
+  const TOKEN_STORAGE_KEY = "senderGrouperAuthToken";
 
   let cachedToken = null;
   let cachedTokenExpiresAt = 0;
+
+  function storageLocalGet(key) {
+    return new Promise((resolve) => {
+      chrome.storage.local.get([key], (result) => {
+        if (chrome.runtime && chrome.runtime.lastError) {
+          resolve(null);
+          return;
+        }
+        resolve(result ? result[key] : null);
+      });
+    });
+  }
+
+  function storageLocalSet(key, value) {
+    return new Promise((resolve) => {
+      chrome.storage.local.set({ [key]: value }, () => {
+        resolve();
+      });
+    });
+  }
+
+  function storageLocalRemove(key) {
+    return new Promise((resolve) => {
+      chrome.storage.local.remove([key], () => {
+        resolve();
+      });
+    });
+  }
+
+  async function getPersistedToken() {
+    const saved = await storageLocalGet(TOKEN_STORAGE_KEY);
+    if (!saved || typeof saved !== "object") {
+      return null;
+    }
+
+    const accessToken = typeof saved.accessToken === "string" ? saved.accessToken : "";
+    const expiresAt = Number(saved.expiresAt || 0);
+    if (!accessToken) {
+      return null;
+    }
+
+    if (expiresAt && Date.now() >= expiresAt) {
+      await storageLocalRemove(TOKEN_STORAGE_KEY);
+      return null;
+    }
+
+    return {
+      accessToken,
+      expiresAt: Number.isFinite(expiresAt) ? expiresAt : 0,
+    };
+  }
+
+  async function persistToken(tokenResult) {
+    if (!tokenResult || !tokenResult.accessToken) {
+      return;
+    }
+
+    await storageLocalSet(TOKEN_STORAGE_KEY, {
+      accessToken: tokenResult.accessToken,
+      expiresAt: Number.isFinite(tokenResult.expiresAt) ? tokenResult.expiresAt : 0,
+    });
+  }
 
   function getChromeError(defaultMessage) {
     if (chrome.runtime && chrome.runtime.lastError) {
@@ -82,6 +145,7 @@
   async function clearIdentityTokenCache() {
     cachedToken = null;
     cachedTokenExpiresAt = 0;
+    await storageLocalRemove(TOKEN_STORAGE_KEY);
 
     if (typeof chrome.identity.clearAllCachedAuthTokens === "function") {
       await new Promise((resolve) => {
@@ -139,6 +203,15 @@
       return cachedToken;
     }
 
+    if (!forceAccountPicker && !forceRefresh) {
+      const savedToken = await getPersistedToken();
+      if (savedToken && savedToken.accessToken) {
+        cachedToken = savedToken.accessToken;
+        cachedTokenExpiresAt = savedToken.expiresAt;
+        return cachedToken;
+      }
+    }
+
     if (forceAccountPicker) {
       if (!interactive) {
         throw new Error("Authentication requires user interaction");
@@ -146,6 +219,7 @@
       const tokenResult = await requestToken(true, true);
       cachedToken = tokenResult.accessToken;
       cachedTokenExpiresAt = tokenResult.expiresAt;
+      await persistToken(tokenResult);
       return cachedToken;
     }
 
@@ -153,6 +227,7 @@
       const tokenResult = await requestToken(false, false);
       cachedToken = tokenResult.accessToken;
       cachedTokenExpiresAt = tokenResult.expiresAt;
+      await persistToken(tokenResult);
       return cachedToken;
     } catch (_nonInteractiveError) {
       if (!interactive) {
@@ -161,6 +236,7 @@
       const tokenResult = await requestToken(true, false);
       cachedToken = tokenResult.accessToken;
       cachedTokenExpiresAt = tokenResult.expiresAt;
+      await persistToken(tokenResult);
       return cachedToken;
     }
   }
@@ -169,6 +245,7 @@
     const token = cachedToken;
     cachedToken = null;
     cachedTokenExpiresAt = 0;
+    await storageLocalRemove(TOKEN_STORAGE_KEY);
 
     if (!token) {
       return;
