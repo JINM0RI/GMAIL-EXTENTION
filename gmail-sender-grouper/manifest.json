@@ -24,11 +24,12 @@
     {
       "matches": ["https://mail.google.com/*"],
       "js": [
+        "paywall.js",
         "content.js",
         "uiRenderer.js",
         "floatingButton.js"
       ],
-      "css": ["styles.css"],
+      "css": ["styles.css", "paywall.css"],
       "run_at": "document_start"
     }
   ]

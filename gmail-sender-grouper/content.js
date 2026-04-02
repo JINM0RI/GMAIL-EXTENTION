@@ -1,3 +1,9 @@
+// Wait for paywall check before doing anything
+(async () => {
+  const licensed = await window.__checkLicense();
+  if (!licensed) return; // stop here if not licensed
+
+  // -- rest of your existing content.js code stays below --
 (function bootstrapSenderGrouper(global) {
   "use strict";
 
@@ -111,3 +117,5 @@
     return undefined;
   });
 })(window);
+
+})();

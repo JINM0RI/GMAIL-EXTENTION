@@ -1,0 +1,125 @@
+#gmail-extension-paywall {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(0, 0, 0, 0.85);
+  z-index: 999999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+#gmail-extension-paywall .pw-box {
+  background: #0a0a0a;
+  border-radius: 20px;
+  padding: 36px 32px;
+  width: 360px;
+  text-align: center;
+  border: 1px solid #888;
+  box-shadow:
+    0 0 20px rgba(200, 200, 200, 0.15),
+    0 0 60px rgba(150, 150, 150, 0.08),
+    inset 0 0 30px rgba(255, 255, 255, 0.02);
+  position: relative;
+}
+
+#gmail-extension-paywall .pw-icon { font-size: 38px; margin-bottom: 14px; }
+
+#gmail-extension-paywall h2 {
+  font-size: 20px; font-weight: 600;
+  color: #e8e8e8; margin: 0 0 8px;
+}
+
+#gmail-extension-paywall .pw-sub {
+  font-size: 13px; color: #777;
+  margin: 0 0 24px;
+}
+
+#gmail-extension-paywall .pw-buttons {
+  display: flex; flex-direction: column; gap: 12px;
+  margin-bottom: 20px;
+}
+
+#gmail-extension-paywall .pw-buy {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 3px; width: 100%; padding: 14px 12px;
+  background: #0a0a0a; color: #d4d4d4;
+  border: 1px solid #999;
+  border-radius: 12px;
+  font-size: 14px; font-weight: 600;
+  cursor: pointer;
+  box-shadow:
+    0 0 12px rgba(180, 180, 180, 0.12),
+    0 0 25px rgba(150, 150, 150, 0.06);
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+#gmail-extension-paywall .pw-buy:hover {
+  border-color: #ccc;
+  box-shadow:
+    0 0 20px rgba(200, 200, 200, 0.25),
+    0 0 40px rgba(180, 180, 180, 0.12);
+}
+
+#gmail-extension-paywall .pw-btn-sub {
+  font-size: 11px; font-weight: 400; color: #666;
+}
+
+#gmail-extension-paywall .pw-divider {
+  border-top: 1px solid #222;
+  padding-top: 16px; margin-bottom: 12px;
+  font-size: 12px; color: #555;
+}
+
+#gmail-extension-paywall .pw-hint {
+  font-size: 12px; color: #666;
+  background: #111; border: 1px solid #2a2a2a;
+  border-radius: 8px; padding: 8px 10px;
+  text-align: left; margin-bottom: 10px;
+}
+
+#gmail-extension-paywall .pw-hint strong { color: #aaa; }
+
+#gmail-extension-paywall .pw-input {
+  width: 100%; padding: 10px 12px;
+  background: #111; color: #ccc;
+  border: 1px solid #333; border-radius: 10px;
+  font-size: 13px; margin-bottom: 10px;
+  outline: none; box-sizing: border-box;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+#gmail-extension-paywall .pw-input:focus {
+  border-color: #888;
+  box-shadow: 0 0 10px rgba(180, 180, 180, 0.15);
+}
+
+#gmail-extension-paywall .pw-activate {
+  width: 100%; padding: 11px;
+  background: #0a0a0a; color: #ccc;
+  border: 1px solid #888; border-radius: 10px;
+  font-size: 14px; font-weight: 600; cursor: pointer;
+  box-shadow: 0 0 10px rgba(180, 180, 180, 0.1);
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+#gmail-extension-paywall .pw-activate:hover {
+  border-color: #ccc;
+  box-shadow: 0 0 18px rgba(200, 200, 200, 0.2);
+}
+
+#gmail-extension-paywall .pw-msg {
+  font-size: 13px; text-align: center;
+  min-height: 18px; margin-top: 8px; color: #aaa;
+}
+
+#gmail-extension-paywall .pw-minimize {
+  background: none; border: none;
+  color: #444; font-size: 12px;
+  cursor: pointer; margin-top: 12px;
+  text-decoration: underline;
+  transition: color 0.2s;
+}
+
+#gmail-extension-paywall .pw-minimize:hover { color: #888; }
