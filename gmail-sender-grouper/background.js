@@ -1,4 +1,4 @@
-importScripts("auth.js", "emailFetcher.js");
+importScripts("trial.js", "auth.js", "emailFetcher.js");
 
 function sendToTab(tabId, payload) {
   return new Promise((resolve) => {
@@ -28,9 +28,18 @@ async function ensureGmailUiInjected(tabId) {
     // CSS may already be present; continue with script injection.
   }
 
+  try {
+    await chrome.scripting.insertCSS({
+      target: { tabId },
+      files: ["paywall.css"],
+    });
+  } catch (_error) {
+    // Paywall styles may already be present; continue with script injection.
+  }
+
   await chrome.scripting.executeScript({
     target: { tabId },
-    files: ["content.js", "uiRenderer.js", "floatingButton.js"],
+    files: ["trial.js", "paywall.js", "content.js", "uiRenderer.js", "floatingButton.js"],
   });
 }
 
@@ -102,6 +111,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   (async () => {
     try {
+      if (message.type === "CHECK_TRIAL") {
+        const trial = await globalThis.SenderGrouper.Trial.checkTrial();
+        sendResponse({ ok: true, trial });
+        return;
+      }
+
+      const trial = await globalThis.SenderGrouper.Trial.checkTrial();
+      if (["FETCH_EMAILS", "REFRESH_EMAILS"].includes(message.type) && !trial.active) {
+        sendResponse({
+          ok: false,
+          code: "TRIAL_EXPIRED",
+          error: "Your 7-day free trial has ended. Please subscribe to continue.",
+        });
+        return;
+      }
+
       if (message.type === "GET_TOKEN") {
         const token = await Auth.getAuthToken(
           message.interactive !== false,

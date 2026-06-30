@@ -118,6 +118,7 @@
       '    <button type="button" class="sg-widget-close" aria-label="Close Sender Grouper">&times;</button>',
       "  </div>",
       "</header>",
+      '<div id="sg-trial-banner" class="sg-trial-banner"></div>',
       '<section class="sg-widget-stats">',
       '  <article class="stat-card sg-widget-stat-card">',
       '    <div class="sg-widget-stat-label">Total Senders</div>',
@@ -153,6 +154,7 @@
       emptyStateNode: panel.querySelector("#sg-widget-empty"),
       listNode: panel.querySelector("#sg-widget-list"),
       updatedAtNode: panel.querySelector("#sg-widget-updated-at"),
+      trialBannerNode: panel.querySelector("#sg-trial-banner"),
     };
   }
 
@@ -301,6 +303,18 @@
       const suppressAuthMessage = Boolean(settings.suppressAuthMessage);
       const returnDetails = Boolean(settings.returnDetails);
       const result = await sendRuntimeMessage({ type: messageType });
+      if (result && result.code === "TRIAL_EXPIRED") {
+        if (window.__showPaywall) {
+          window.__showPaywall();
+        }
+        return returnDetails
+          ? {
+              ok: false,
+              code: "TRIAL_EXPIRED",
+              error: result.error || "Your 7-day free trial has ended. Subscribe to continue.",
+            }
+          : false;
+      }
       if (result && result.code === "AUTH_REQUIRED") {
         if (!suppressAuthMessage && renderer && typeof renderer.showStatusMessage === "function") {
           renderer.showStatusMessage(result.error || "Session expired. Click Profile Login to continue.");
@@ -524,8 +538,20 @@
       renderer.setData(changes[STORAGE_KEY].newValue || null);
     });
 
+    async function updateTrialStatus() {
+      try {
+        const trialResult = await sendRuntimeMessage({ type: "CHECK_TRIAL" });
+        if (trialResult && trialResult.ok && trialResult.trial) {
+          renderer.setTrialStatus(trialResult.trial);
+        }
+      } catch (err) {
+        console.error("[SenderGrouper] Failed to check trial", err);
+      }
+    }
+
     loadStorageData();
     initializeFromSilentAuth();
+    updateTrialStatus();
 
     return {
       openPanel,
@@ -550,8 +576,16 @@
     }
 
     state.mounting = true;
-    initTheme()
-      .then((theme) => {
+    (async () => {
+      try {
+        const trial = await globalThis.SenderGrouper.Trial.checkTrial();
+        if (!trial.active) {
+          state.mounting = false;
+          persistWidgetVisibility(false);
+          return;
+        }
+
+        const theme = await initTheme();
         applyThemeClass(theme);
 
         const dom = buildWidgetDom();
@@ -566,6 +600,7 @@
           emptyStateNode: dom.emptyStateNode,
           listNode: dom.listNode,
           updatedAtNode: dom.updatedAtNode,
+          trialBannerNode: dom.trialBannerNode,
         });
 
         const controller = createController(dom, renderer);
@@ -573,10 +608,12 @@
         state.controller = controller;
         state.mounted = true;
         persistWidgetVisibility(true);
-      })
-      .finally(() => {
+      } catch (err) {
+        console.error("[SenderGrouper] Failed to initialize main UI", err);
+      } finally {
         state.mounting = false;
-      });
+      }
+    })();
   }
 
   function removeMainUI() {

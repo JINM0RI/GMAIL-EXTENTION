@@ -1,9 +1,3 @@
-// Wait for paywall check before doing anything
-(async () => {
-  const licensed = await window.__checkLicense();
-  if (!licensed) return; // stop here if not licensed
-
-  // -- rest of your existing content.js code stays below --
 (function bootstrapSenderGrouper(global) {
   "use strict";
 
@@ -77,45 +71,64 @@
     };
   }
 
-  chrome.runtime.onMessage.addListener((msg) => {
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (!msg || !msg.type) {
-      return;
+      return false;
     }
 
-    if (msg.type === "SHOW_FLOATING_BUTTON") {
-      if (!NAMESPACE.FloatingWidget || typeof NAMESPACE.FloatingWidget.createMainUI !== "function") {
+    (async () => {
+      const trial = await globalThis.SenderGrouper.Trial.checkTrial();
+
+      if (msg.type === "SHOW_FLOATING_BUTTON") {
+        if (!trial.active) {
+          window.__showPaywall && window.__showPaywall();
+          sendResponse({ ok: false, code: "TRIAL_EXPIRED", error: "Trial expired" });
+          return;
+        }
+        if (!NAMESPACE.FloatingWidget || typeof NAMESPACE.FloatingWidget.createMainUI !== "function") {
+          return;
+        }
+        NAMESPACE.FloatingWidget.createMainUI();
+        sendResponse({ ok: true });
         return;
       }
-      NAMESPACE.FloatingWidget.createMainUI();
-      return;
-    }
 
-    if (msg.type === "TOGGLE_FLOATING_BUTTON") {
-      if (!NAMESPACE.FloatingWidget || typeof NAMESPACE.FloatingWidget.toggleFloatingButton !== "function") {
+      if (msg.type === "TOGGLE_FLOATING_BUTTON") {
+        if (!trial.active) {
+          window.__showPaywall && window.__showPaywall();
+          sendResponse({ ok: false, code: "TRIAL_EXPIRED", error: "Trial expired" });
+          return;
+        }
+        if (!NAMESPACE.FloatingWidget || typeof NAMESPACE.FloatingWidget.toggleFloatingButton !== "function") {
+          return;
+        }
+        NAMESPACE.FloatingWidget.toggleFloatingButton();
+        sendResponse({ ok: true });
         return;
       }
-      NAMESPACE.FloatingWidget.toggleFloatingButton();
-      return;
-    }
 
-    if (msg.type === "SG_DATA_UPDATED") {
-      // UI listens to chrome.storage.onChanged; this is an optional sync hint.
-      return true;
-    }
+      if (msg.type === "GET_GMAIL_CONTEXT") {
+        const identity = verifyIdentity();
+        sendResponse({
+          ok: true,
+          accountEmail: identity.pageEmail,
+          pageEmail: identity.pageEmail,
+          accountIndex: identity.accountIndex,
+          href: identity.href,
+        });
+        return;
+      }
 
-    if (msg.type === "GET_GMAIL_CONTEXT") {
-      const identity = verifyIdentity();
-      return {
-        ok: true,
-        accountEmail: identity.pageEmail,
-        pageEmail: identity.pageEmail,
-        accountIndex: identity.accountIndex,
-        href: identity.href,
-      };
-    }
+      if (msg.type === "SG_DATA_UPDATED") {
+        sendResponse({ ok: true });
+        return;
+      }
 
-    return undefined;
+      sendResponse({ ok: false, error: "Unsupported message type" });
+    })().catch((error) => {
+      sendResponse({ ok: false, error: error && error.message ? error.message : "Failed" });
+    });
+
+    return true;
   });
 })(window);
-
-})();

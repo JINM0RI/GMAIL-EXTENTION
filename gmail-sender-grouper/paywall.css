@@ -1,125 +1,495 @@
-#gmail-extension-paywall {
+.sg-paywall-overlay {
   position: fixed;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  background: rgba(0, 0, 0, 0.85);
-  z-index: 999999;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.65);
+  z-index: 2147483647;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Google Sans", "Segoe UI", Roboto, sans-serif;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  padding: 16px;
+  box-sizing: border-box;
 }
 
-#gmail-extension-paywall .pw-box {
-  background: #0a0a0a;
-  border-radius: 20px;
-  padding: 36px 32px;
-  width: 360px;
+.sg-paywall-card {
+  background: linear-gradient(135deg, #0f0f0f 0%, #1a1a1a 100%);
+  border-radius: 16px;
+  padding: 24px 28px;
+  width: 100%;
+  max-width: 380px;
+  max-height: 90vh;
+  overflow-y: auto;
+  border: 1px solid #333;
+  box-shadow: 0 10px 40px rgba(0, 212, 255, 0.15), 0 16px 80px rgba(0, 0, 0, 0.6);
   text-align: center;
-  border: 1px solid #888;
-  box-shadow:
-    0 0 20px rgba(200, 200, 200, 0.15),
-    0 0 60px rgba(150, 150, 150, 0.08),
-    inset 0 0 30px rgba(255, 255, 255, 0.02);
-  position: relative;
+  color: #ffffff;
+  box-sizing: border-box;
+  scrollbar-color: rgba(0, 212, 255, 0.3) transparent;
+  scrollbar-width: thin;
 }
 
-#gmail-extension-paywall .pw-icon { font-size: 38px; margin-bottom: 14px; }
-
-#gmail-extension-paywall h2 {
-  font-size: 20px; font-weight: 600;
-  color: #e8e8e8; margin: 0 0 8px;
+/* Custom scrollbar styling for the card container */
+.sg-paywall-card::-webkit-scrollbar {
+  width: 6px;
 }
 
-#gmail-extension-paywall .pw-sub {
-  font-size: 13px; color: #777;
-  margin: 0 0 24px;
+.sg-paywall-card::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-#gmail-extension-paywall .pw-buttons {
-  display: flex; flex-direction: column; gap: 12px;
+.sg-paywall-card::-webkit-scrollbar-thumb {
+  background: rgba(0, 212, 255, 0.3);
+  border-radius: 3px;
+}
+
+.sg-paywall-card::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 212, 255, 0.6);
+}
+
+.sg-paywall-header {
+  margin-bottom: 24px;
+}
+
+.sg-paywall-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  display: block;
+}
+
+.sg-paywall-header h2 {
+  font-size: 24px;
+  font-weight: 800;
+  color: #00ffff;
+  margin: 0;
+  text-shadow: 0 0 10px rgba(0, 255, 255, 0.4);
+}
+
+.sg-paywall-timer {
+  background: rgba(0, 212, 255, 0.05);
+  border: 1px solid rgba(0, 212, 255, 0.15);
+  border-radius: 12px;
+  padding: 16px;
   margin-bottom: 20px;
 }
 
-#gmail-extension-paywall .pw-buy {
-  display: flex; flex-direction: column; align-items: center;
-  gap: 3px; width: 100%; padding: 14px 12px;
-  background: #0a0a0a; color: #d4d4d4;
-  border: 1px solid #999;
+.sg-timer-bar {
+  width: 100%;
+  height: 8px;
+  background: rgba(0, 212, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.sg-timer-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #00d4ff, #00ff88);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.sg-timer-text {
+  margin: 0;
+  color: #00ffff;
+  font-size: 14px;
+  font-weight: 700;
+  text-shadow: 0 0 8px rgba(0, 255, 255, 0.3);
+}
+
+.sg-timer-text strong {
+  font-size: 20px;
+  color: #00ffff;
+  font-weight: 800;
+}
+
+.sg-paywall-expired {
+  background: rgba(255, 77, 79, 0.05);
+  border: 1px solid rgba(255, 77, 79, 0.2);
   border-radius: 12px;
-  font-size: 14px; font-weight: 600;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.sg-paywall-expired p {
+  margin: 4px 0;
+  font-size: 14px;
+  color: #ff4d4f;
+  font-weight: 600;
+}
+
+.sg-paywall-expired p:first-child {
+  font-size: 16px;
+  font-weight: 800;
+  color: #ff4d4f;
+  text-shadow: 0 0 8px rgba(255, 77, 79, 0.3);
+}
+
+.sg-paywall-features {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 24px;
+  text-align: left;
+}
+
+.sg-paywall-features h3 {
+  font-size: 12px;
+  font-weight: 800;
+  color: #00ffff;
+  margin: 0 0 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.sg-paywall-features ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.sg-paywall-features li {
+  font-size: 13px;
+  color: #00ff00;
+  padding: 4px 0;
+  margin: 0;
+}
+
+.sg-paywall-btn {
+  width: 100%;
+  padding: 12px 16px;
+  margin-bottom: 10px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
   cursor: pointer;
-  box-shadow:
-    0 0 12px rgba(180, 180, 180, 0.12),
-    0 0 25px rgba(150, 150, 150, 0.06);
-  transition: box-shadow 0.2s, border-color 0.2s;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
 }
 
-#gmail-extension-paywall .pw-buy:hover {
-  border-color: #ccc;
-  box-shadow:
-    0 0 20px rgba(200, 200, 200, 0.25),
-    0 0 40px rgba(180, 180, 180, 0.12);
+.sg-subscribe-btn {
+  background: linear-gradient(90deg, #00d4ff, #00ff88);
+  color: #000000;
+  box-shadow: 0 4px 15px rgba(0, 212, 255, 0.3);
 }
 
-#gmail-extension-paywall .pw-btn-sub {
-  font-size: 11px; font-weight: 400; color: #666;
+.sg-subscribe-btn:hover {
+  box-shadow: 0 6px 20px rgba(0, 212, 255, 0.5);
+  transform: translateY(-1px);
 }
 
-#gmail-extension-paywall .pw-divider {
-  border-top: 1px solid #222;
-  padding-top: 16px; margin-bottom: 12px;
-  font-size: 12px; color: #555;
+.sg-close-btn,
+.sg-restore-btn {
+  background: rgba(255, 255, 255, 0.05);
+  color: #00d4ff;
+  border: 1px solid rgba(0, 212, 255, 0.3);
 }
 
-#gmail-extension-paywall .pw-hint {
-  font-size: 12px; color: #666;
-  background: #111; border: 1px solid #2a2a2a;
-  border-radius: 8px; padding: 8px 10px;
-  text-align: left; margin-bottom: 10px;
+.sg-close-btn:hover,
+.sg-restore-btn:hover {
+  background: rgba(0, 212, 255, 0.1);
+  border-color: #00d4ff;
+  color: #ffffff;
 }
 
-#gmail-extension-paywall .pw-hint strong { color: #aaa; }
-
-#gmail-extension-paywall .pw-input {
-  width: 100%; padding: 10px 12px;
-  background: #111; color: #ccc;
-  border: 1px solid #333; border-radius: 10px;
-  font-size: 13px; margin-bottom: 10px;
-  outline: none; box-sizing: border-box;
-  transition: border-color 0.2s, box-shadow 0.2s;
+body.sg-subscription-locked {
+  overflow: hidden;
 }
 
-#gmail-extension-paywall .pw-input:focus {
-  border-color: #888;
-  box-shadow: 0 0 10px rgba(180, 180, 180, 0.15);
+/* Navigation Header styling */
+.sg-paywall-nav {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 16px;
+  width: 100%;
 }
 
-#gmail-extension-paywall .pw-activate {
-  width: 100%; padding: 11px;
-  background: #0a0a0a; color: #ccc;
-  border: 1px solid #888; border-radius: 10px;
-  font-size: 14px; font-weight: 600; cursor: pointer;
-  box-shadow: 0 0 10px rgba(180, 180, 180, 0.1);
-  transition: box-shadow 0.2s, border-color 0.2s;
+.sg-nav-back-btn {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  transition: all 0.25s ease;
+  font-family: inherit;
 }
 
-#gmail-extension-paywall .pw-activate:hover {
-  border-color: #ccc;
-  box-shadow: 0 0 18px rgba(200, 200, 200, 0.2);
+.sg-nav-back-btn:hover {
+  color: #00ffff;
+  background: rgba(0, 212, 255, 0.08);
+  text-shadow: 0 0 8px rgba(0, 255, 255, 0.3);
 }
 
-#gmail-extension-paywall .pw-msg {
-  font-size: 13px; text-align: center;
-  min-height: 18px; margin-top: 8px; color: #aaa;
+.sg-back-arrow {
+  font-size: 16px;
+  line-height: 1;
 }
 
-#gmail-extension-paywall .pw-minimize {
-  background: none; border: none;
-  color: #444; font-size: 12px;
-  cursor: pointer; margin-top: 12px;
-  text-decoration: underline;
-  transition: color 0.2s;
+/* Tabs Navigation styling */
+.sg-paywall-tabs {
+  display: flex;
+  width: 100%;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 24px;
+  gap: 4px;
 }
 
-#gmail-extension-paywall .pw-minimize:hover { color: #888; }
+.sg-tab-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  padding: 12px 6px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  border-bottom: 2px solid transparent;
+  font-family: inherit;
+}
+
+.sg-tab-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.sg-tab-btn.active {
+  color: #00ffff;
+  border-bottom: 2px solid #00ffff;
+  text-shadow: 0 0 10px rgba(0, 255, 255, 0.4);
+}
+
+/* Tab Content Visibility */
+.sg-tab-content {
+  width: 100%;
+  animation: sg-fade-in 0.3s ease-in-out;
+}
+
+@keyframes sg-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Features checklist custom elements */
+.sg-check {
+  color: #00ff88;
+  margin-right: 6px;
+  font-weight: bold;
+  text-shadow: 0 0 5px rgba(0, 255, 136, 0.4);
+}
+
+/* Pricing block styling */
+.sg-price-container {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(0, 212, 255, 0.15);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 22px;
+  text-align: center;
+  box-shadow: inset 0 0 15px rgba(0, 212, 255, 0.05);
+}
+
+.sg-price-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 6px;
+  font-weight: 700;
+}
+
+.sg-price-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
+}
+
+.sg-price-val {
+  font-size: 32px;
+  font-weight: 800;
+  color: #00ffff;
+  text-shadow: 0 0 12px rgba(0, 255, 255, 0.5);
+}
+
+.sg-price-approx {
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 600;
+}
+
+.sg-price-note {
+  font-size: 11px;
+  color: #00ff88;
+  margin-top: 8px;
+  font-weight: 600;
+  text-shadow: 0 0 6px rgba(0, 255, 136, 0.3);
+}
+
+/* Subscribing and Purchase button text stack */
+.sg-subscribe-btn {
+  flex-direction: column;
+  gap: 2px;
+  height: auto;
+  padding: 10px 16px;
+}
+
+.sg-btn-main-text {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.sg-btn-sub-text {
+  font-size: 11px;
+  opacity: 0.85;
+  font-weight: 600;
+}
+
+/* Info and support button custom outline styling */
+.sg-info-btn,
+.sg-help-btn {
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sg-info-btn:hover,
+.sg-help-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+/* Purchase Instructions Panel */
+.sg-instructions-panel {
+  text-align: left;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 18px;
+  margin-top: 6px;
+  box-sizing: border-box;
+  animation: sg-slide-up 0.25s ease-out;
+}
+
+@keyframes sg-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sg-instructions-panel h3 {
+  margin-top: 0;
+  color: #00ffff;
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 14px;
+  text-shadow: 0 0 8px rgba(0, 255, 255, 0.3);
+}
+
+.sg-instructions-list {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.6;
+}
+
+.sg-instructions-list li {
+  margin-bottom: 12px;
+}
+
+.sg-instructions-list li strong {
+  color: #ffffff;
+}
+
+.sg-close-instructions-btn {
+  background: rgba(255, 77, 79, 0.08);
+  color: #ff4d4f;
+  border: 1px solid rgba(255, 77, 79, 0.3);
+  margin-top: 14px;
+}
+
+.sg-close-instructions-btn:hover {
+  background: rgba(255, 77, 79, 0.18);
+  color: #ffffff;
+  border-color: #ff4d4f;
+}
+
+/* License activation tab styling */
+.sg-activate-main {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.sg-activate-desc {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.5;
+  margin: 8px 0 20px;
+}
+
+.sg-input-group {
+  text-align: left;
+  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+}
+
+.sg-input-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.sg-license-input {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 12px 14px;
+  color: #ffffff;
+  font-size: 14px;
+  font-family: "Courier New", Courier, monospace;
+  box-sizing: border-box;
+  transition: all 0.25s ease;
+  text-align: center;
+  letter-spacing: 0.5px;
+}
+
+.sg-license-input:focus {
+  border-color: #00ffff;
+  outline: none;
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.25);
+  background: rgba(0, 0, 0, 0.6);
+}

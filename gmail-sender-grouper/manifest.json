@@ -24,6 +24,7 @@
     {
       "matches": ["https://mail.google.com/*"],
       "js": [
+        "trial.js",
         "paywall.js",
         "content.js",
         "uiRenderer.js",

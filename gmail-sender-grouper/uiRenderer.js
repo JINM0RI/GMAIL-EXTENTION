@@ -524,6 +524,60 @@
       }
     }
 
+    function setTrialStatus(trial) {
+      if (!refs.trialBannerNode) {
+        return;
+      }
+
+      const banner = refs.trialBannerNode;
+      banner.className = "sg-trial-banner";
+
+      if (!trial) {
+        banner.style.display = "none";
+        return;
+      }
+
+      banner.style.display = "block";
+      if (trial.isPaid) {
+        banner.innerHTML = "<span>Premium Version Active ✨</span>";
+        banner.classList.add("premium-active");
+      } else if (trial.active) {
+        banner.innerHTML = `
+          <div class="sg-banner-content">
+            <span>Trial Version: ${trial.daysLeft} day${trial.daysLeft !== 1 ? "s" : ""} remaining</span>
+            <button class="sg-banner-buy-btn" id="sg-banner-buy-btn" type="button">Buy License</button>
+          </div>
+        `;
+        banner.classList.add("trial-active");
+
+        const buyBtn = banner.querySelector("#sg-banner-buy-btn");
+        if (buyBtn) {
+          buyBtn.addEventListener("click", () => {
+            if (global.window.__showPaywall) {
+              global.window.__showPaywall();
+            }
+          });
+        }
+      } else {
+        banner.innerHTML = `
+          <div class="sg-banner-content">
+            <span>Trial Version: Expired ❌</span>
+            <button class="sg-banner-buy-btn" id="sg-banner-buy-btn" type="button">Buy License</button>
+          </div>
+        `;
+        banner.classList.add("trial-expired");
+
+        const buyBtn = banner.querySelector("#sg-banner-buy-btn");
+        if (buyBtn) {
+          buyBtn.addEventListener("click", () => {
+            if (global.window.__showPaywall) {
+              global.window.__showPaywall();
+            }
+          });
+        }
+      }
+    }
+
     bindSearch();
 
     return {
@@ -532,6 +586,7 @@
       showLoadingState,
       showStatusMessage,
       showAccountMismatch,
+      setTrialStatus,
     };
   }
 
