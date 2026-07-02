@@ -194,6 +194,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return;
       }
 
+      if (message.type === "OPEN_TAB") {
+        const url = message.url;
+        if (!url) {
+          sendResponse({ ok: false, error: "Missing url" });
+          return;
+        }
+        await chrome.tabs.create({ url, active: true });
+        sendResponse({ ok: true });
+        return;
+      }
+
       if (message.type === "CLEAR_TOKEN") {
         await Auth.clearAuthToken();
         sendResponse({ ok: true });

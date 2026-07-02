@@ -1,3 +1,5 @@
+const DODO_PAYMENT_LINK = "https://test.checkout.dodopayments.com/buy/pdt_0Nayso9oxA51GhBO1QpbL?quantity=1";
+
 (function setupPaywall(global) {
   "use strict";
 
@@ -244,10 +246,78 @@
   // --- FUTURE INTEGRATION PLACEHOLDERS ---
 
   function openDodoCheckout() {
-    console.log("openDodoCheckout placeholder called");
-    alert("Redirecting to Dodo Payments Checkout... (Placeholder function openDodoCheckout will later redirect to the payment link)");
-    // TODO: Integrate Dodo Payments checkout URL here
-    // window.open("https://checkout.dodopayments.com/...", "_blank");
+    if (!DODO_PAYMENT_LINK) {
+      console.error("Dodo Checkout failed: DODO_PAYMENT_LINK is not configured.");
+      alert("We couldn't initiate checkout because the payment link is missing.");
+      return;
+    }
+
+    console.log("Dodo Checkout initiation started.");
+    console.log("Target Payment Link:", DODO_PAYMENT_LINK);
+
+    const buyBtn = document.getElementById("sg-buy-license-btn");
+    if (!buyBtn) {
+      console.error("Buy license button (#sg-buy-license-btn) not found in DOM.");
+      return;
+    }
+
+    const originalContent = buyBtn.innerHTML;
+
+    // 1. Disable the button during the opening process
+    buyBtn.disabled = true;
+
+    // 2. Show loading state in the button labels
+    const mainTextSpan = buyBtn.querySelector(".sg-btn-main-text");
+    const subTextSpan = buyBtn.querySelector(".sg-btn-sub-text");
+
+    if (mainTextSpan) {
+      mainTextSpan.textContent = "Opening Checkout...";
+    }
+    if (subTextSpan) {
+      subTextSpan.textContent = "Please wait a moment...";
+    }
+
+    const startTime = Date.now();
+
+    // 3. Open Dodo payment link in a new tab via background messaging
+    const message = { type: "OPEN_TAB", url: DODO_PAYMENT_LINK };
+    chrome.runtime.sendMessage(
+      message,
+      (response) => {
+        const elapsedTime = Date.now() - startTime;
+        // Keep the loading state for approximately 1 second (1000ms)
+        const delay = Math.max(0, 1000 - elapsedTime);
+
+        setTimeout(() => {
+          const runtimeErr = chrome.runtime.lastError;
+          if (runtimeErr) {
+            console.error("Chrome Runtime Error:", runtimeErr);
+            handleFailure(runtimeErr.message);
+          } else if (response && !response.ok) {
+            console.error("Dodo Checkout Open Failure:", response.error);
+            handleFailure(response.error);
+          } else {
+            console.log("Successfully opened Dodo checkout tab.");
+            // Re-enable and restore button state
+            buyBtn.disabled = false;
+            buyBtn.innerHTML = originalContent;
+          }
+        }, delay);
+      }
+    );
+
+    function handleFailure(errorDetail) {
+      console.error("Failed to open Dodo checkout page automatically:", errorDetail);
+      // Re-enable the button if opening fails
+      buyBtn.disabled = false;
+      buyBtn.innerHTML = originalContent;
+      // Display user-friendly error message
+      alert(
+        "We couldn't open the payment window automatically.\n\n" +
+        "Please check your browser settings to ensure pop-ups are allowed, or manually copy and visit the checkout link:\n" +
+        DODO_PAYMENT_LINK
+      );
+    }
   }
 
   async function activateLicense(licenseKey) {
